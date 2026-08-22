@@ -12,16 +12,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = `${protocol}://${host}`;
 
   return {
-    title: "LO2S Pattern Lab — LED Test Pattern Generator",
+    title: "OpticMesh — LED Mapping & Simulation",
     description:
       "Metric LED test patterns, linked wall calculations and Resolume pixel maps for LO2S technical production teams.",
     icons: {
-      icon: "/brand/lo2s-pattern-lab-icon.png",
-      shortcut: "/brand/lo2s-pattern-lab-icon.png",
-      apple: "/brand/lo2s-pattern-lab-icon.png",
+      icon: "/brand/opticmesh-icon.png",
+      shortcut: "/brand/opticmesh-icon.png",
+      apple: "/brand/opticmesh-icon.png",
     },
     openGraph: {
-      title: "LO2S Pattern Lab",
+      title: "OpticMesh",
       description: "Metric LED test patterns and Resolume pixel-map exports for technical production.",
       type: "website",
       images: [
@@ -29,13 +29,13 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${origin}/brand/github-social-preview.png`,
           width: 1280,
           height: 640,
-          alt: "LO2S Pattern Lab",
+          alt: "OpticMesh",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "LO2S Pattern Lab",
+      title: "OpticMesh",
       description: "Metric LED test patterns and Resolume pixel-map exports for technical production.",
       images: [`${origin}/brand/github-social-preview.png`],
     },

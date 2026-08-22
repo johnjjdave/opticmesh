@@ -7,10 +7,10 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 
 type Point = { x: number; y: number };
 type Rect = { x: number; y: number; width: number; height: number; points: Point[] };
-export type SimulationSlice = { id: string; name: string; screenName: string; input: Rect; paletteIndex: number };
-export type SliceTransform = { position: [number, number, number]; rotation: [number, number, number] };
+export type SimulationSlice = { id: string; name: string; screenName: string; input: Rect; output: Rect; warped: boolean; paletteIndex: number };
+export type SliceTransform = { position: [number, number, number]; rotation: [number, number, number]; scale?: [number, number, number] };
 export type CameraState = { position: [number, number, number]; target: [number, number, number] };
-export type TransformMode = "translate" | "rotate";
+export type TransformMode = "translate" | "rotate" | "scale";
 export type SimulationSource = "pattern" | "video" | "ndi" | "spout";
 export type SlicePivot = "bottom-left" | "bottom-center" | "bottom-right";
 export type SliceCurvature = { horizontal: number; vertical: number };
@@ -25,6 +25,8 @@ type Props = {
   curvatureBySlice: Record<string, SliceCurvature>;
   pivotBySlice: Record<string, SlicePivot>;
   selectedIds: string[];
+  visibleIds: string[];
+  lockedIds: string[];
   transforms: Record<string, SliceTransform>;
   transformMode: TransformMode;
   transformSpace: "local" | "world";
@@ -35,10 +37,11 @@ type Props = {
   cameraState?: CameraState;
   textureVersion: string;
   fitSignal: number;
+  focusSignal: number;
   gridVisible: boolean;
   floorVisible: boolean;
   backgroundLevel: number;
-  drawPatternTexture: (canvas: HTMLCanvasElement) => void;
+  drawPatternTexture: (canvas: HTMLCanvasElement, slice?: SimulationSlice) => void;
   onSelectionChange: (ids: string[]) => void;
   onTransformPreview: (updates: Record<string, SliceTransform> | null) => void;
   onTransformsChange: (updates: Record<string, SliceTransform>) => void;
@@ -168,6 +171,7 @@ export default function ThreeSimulation(props: Props) {
   const marqueeRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<{
     fit: () => void;
+    focusSelection: () => void;
     updateClipping: () => void;
     controls: OrbitControls;
     camera: THREE.PerspectiveCamera;
@@ -175,7 +179,7 @@ export default function ThreeSimulation(props: Props) {
     transform: TransformControls;
     proxy: THREE.Object3D;
     meshes: Map<string, SliceObject>;
-    texture: THREE.CanvasTexture;
+    patternTextures: Map<string, THREE.CanvasTexture>;
     scene: THREE.Scene;
     grid: THREE.GridHelper;
     floor: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
@@ -219,14 +223,7 @@ export default function ThreeSimulation(props: Props) {
     scene.add(grid);
     scene.add(new THREE.AxesHelper(1));
 
-    const textureCanvas = document.createElement("canvas");
-    const texture = new THREE.CanvasTexture(textureCanvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.generateMipmaps = true;
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const patternTextures = new Map<string, THREE.CanvasTexture>();
 
     const proxy = new THREE.Object3D();
     scene.add(proxy);
@@ -258,6 +255,20 @@ export default function ThreeSimulation(props: Props) {
       updateCameraClipping();
       controls.update();
     };
+    const focusSelection = () => {
+      const bounds = new THREE.Box3();
+      latestRef.current.selectedIds.forEach((id) => { const mesh = meshes.get(id); if (mesh?.visible) bounds.expandByObject(mesh); });
+      if (bounds.isEmpty()) return;
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      const direction = camera.position.clone().sub(controls.target).normalize();
+      const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+      const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * camera.aspect);
+      const distance = Math.max(0.1, sphere.radius / Math.sin(Math.max(0.1, Math.min(verticalFov, horizontalFov) / 2)) * 1.2);
+      controls.target.copy(sphere.center);
+      camera.position.copy(sphere.center).add(direction.multiplyScalar(distance));
+      updateCameraClipping();
+      controls.update();
+    };
 
     if (props.cameraState) {
       camera.position.fromArray(props.cameraState.position);
@@ -273,6 +284,7 @@ export default function ThreeSimulation(props: Props) {
     render();
     const resize = () => {
       const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
@@ -280,6 +292,7 @@ export default function ThreeSimulation(props: Props) {
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
+    document.addEventListener("fullscreenchange", resize);
     resize();
 
     const invalidate = () => { updateCameraClipping(); dirty = true; };
@@ -288,7 +301,7 @@ export default function ThreeSimulation(props: Props) {
 
     let pointerStart: { x: number; y: number } | null = null, marqueeStart: { x: number; y: number } | null = null, marqueeMoved = false, selectedOnDown = false;
     let transformDragging = false;
-    let transformStart: { proxyPosition: THREE.Vector3; proxyQuaternion: THREE.Quaternion; items: Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion }> } | null = null;
+    let transformStart: { proxyPosition: THREE.Vector3; proxyQuaternion: THREE.Quaternion; proxyScale: THREE.Vector3; items: Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }> } | null = null;
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
     const hitAt = (clientX: number, clientY: number) => { const rect = renderer.domElement.getBoundingClientRect(); pointer.set((clientX - rect.left) / rect.width * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1); raycaster.setFromCamera(pointer, camera); return raycaster.intersectObjects(Array.from(meshes.values()), false)[0]?.object as SliceObject | undefined; };
     const setMarquee = (left: number, top: number, width: number, height: number, visible: boolean) => { const element = marqueeRef.current; if (!element) return; Object.assign(element.style, { display: visible ? "block" : "none", left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` }); };
@@ -343,28 +356,30 @@ export default function ThreeSimulation(props: Props) {
     renderer.domElement.addEventListener("pointerup", onPointerUp, true);
 
     const beginTransform = () => {
-      const items = new Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion }>();
-      latestRef.current.selectedIds.forEach((id) => { const mesh = meshes.get(id); if (mesh) items.set(id, { position: mesh.position.clone(), quaternion: mesh.quaternion.clone() }); });
-      transformStart = { proxyPosition: proxy.position.clone(), proxyQuaternion: proxy.quaternion.clone(), items };
+      const items = new Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }>();
+      latestRef.current.selectedIds.forEach((id) => { const mesh = meshes.get(id); if (mesh && !latestRef.current.lockedIds.includes(id)) items.set(id, { position: mesh.position.clone(), quaternion: mesh.quaternion.clone(), scale: mesh.scale.clone() }); });
+      transformStart = { proxyPosition: proxy.position.clone(), proxyQuaternion: proxy.quaternion.clone(), proxyScale: proxy.scale.clone(), items };
     };
     const updateTransform = () => {
       if (!transformStart) return;
       const deltaQuaternion = proxy.quaternion.clone().multiply(transformStart.proxyQuaternion.clone().invert());
       const translation = proxy.position.clone().sub(transformStart.proxyPosition);
+      const deltaScale = proxy.scale.clone().divide(transformStart.proxyScale);
       transformStart.items.forEach((start, id) => {
         const mesh = meshes.get(id); if (!mesh) return;
-        mesh.position.copy(start.position.clone().sub(transformStart!.proxyPosition).applyQuaternion(deltaQuaternion).add(transformStart!.proxyPosition).add(translation));
+        mesh.position.copy(start.position.clone().sub(transformStart!.proxyPosition).multiply(deltaScale).applyQuaternion(deltaQuaternion).add(transformStart!.proxyPosition).add(translation));
         mesh.quaternion.copy(deltaQuaternion.clone().multiply(start.quaternion));
+        mesh.scale.copy(start.scale).multiply(deltaScale);
       });
       const preview: Record<string, SliceTransform> = {};
-      transformStart.items.forEach((_, id) => { const mesh = meshes.get(id); if (mesh) preview[id] = { position: tuple(mesh.position), rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z] }; });
+      transformStart.items.forEach((_, id) => { const mesh = meshes.get(id); if (mesh) preview[id] = { position: tuple(mesh.position), rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z], scale: tuple(mesh.scale) }; });
       latestRef.current.onTransformPreview(preview);
       dirty = true;
     };
     const endTransform = () => {
       if (!transformStart) return;
       const updates: Record<string, SliceTransform> = {};
-      transformStart.items.forEach((_, id) => { const mesh = meshes.get(id); if (mesh) updates[id] = { position: tuple(mesh.position), rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z] }; });
+      transformStart.items.forEach((_, id) => { const mesh = meshes.get(id); if (mesh) updates[id] = { position: tuple(mesh.position), rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z], scale: tuple(mesh.scale) }; });
       transformStart = null;
       latestRef.current.onTransformsChange(updates);
       latestRef.current.onTransformPreview(null);
@@ -374,13 +389,14 @@ export default function ThreeSimulation(props: Props) {
     transform.addEventListener("mouseUp", endTransform);
     transform.addEventListener("dragging-changed", (event) => { transformDragging = Boolean((event as { value?: boolean }).value); controls.enabled = !transformDragging; dirty = true; });
 
-    runtimeRef.current = { fit, updateClipping: updateCameraClipping, controls, camera, renderer, transform, proxy, meshes, texture, scene, grid, floor, externalTextures: {} };
+    runtimeRef.current = { fit, focusSelection, updateClipping: updateCameraClipping, controls, camera, renderer, transform, proxy, meshes, patternTextures, scene, grid, floor, externalTextures: {} };
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      document.removeEventListener("fullscreenchange", resize);
       controls.dispose();
       transform.dispose();
-      texture.dispose();
+      patternTextures.forEach((texture) => texture.dispose());
       meshes.forEach((mesh) => { mesh.geometry.dispose(); mesh.material.forEach((material) => material.dispose()); });
       renderer.domElement.removeEventListener("pointerdown", onPointerDown, true);
       renderer.domElement.removeEventListener("pointermove", onPointerMove, true);
@@ -394,11 +410,14 @@ export default function ThreeSimulation(props: Props) {
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
-    const canvas = runtime.texture.image as HTMLCanvasElement;
-    props.drawPatternTexture(canvas);
-    runtime.texture.needsUpdate = true;
+    props.slices.forEach((slice) => {
+      const texture = runtime.patternTextures.get(slice.id);
+      if (!texture) return;
+      props.drawPatternTexture(texture.image as HTMLCanvasElement, slice);
+      texture.needsUpdate = true;
+    });
     runtime.renderer.render(runtime.scene, runtime.camera);
-  }, [props.textureVersion, props.drawPatternTexture]);
+  }, [props.textureVersion, props.drawPatternTexture, props.slices]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -465,13 +484,25 @@ export default function ThreeSimulation(props: Props) {
       mesh.material.forEach((material) => material.dispose());
     });
     runtime.meshes.clear();
+    runtime.patternTextures.forEach((texture) => texture.dispose());
+    runtime.patternTextures.clear();
     const masterPitchM = props.masterPitchMm / 1000;
     props.slices.forEach((slice) => {
       const localPitchM = (props.pitchBySlice[slice.id] || props.masterPitchMm) / 1000;
       const route = props.sourceOverrides[slice.id] || "inherit", resolvedSource = route === "inherit" ? props.source : route;
       const pivot = props.pivotBySlice[slice.id] || "bottom-center";
-      const geometry = createSliceGeometry(slice, localPitchM, props.depthBySlice[slice.id] || 0.01, props.curvatureBySlice[slice.id] || { horizontal: 0, vertical: 0 }, props.compositionWidth, props.compositionHeight, pivot, route !== "inherit");
-      const sourceTexture = resolvedSource === "pattern" ? runtime.texture : runtime.externalTextures[resolvedSource];
+      const geometry = createSliceGeometry(slice, localPitchM, props.depthBySlice[slice.id] || 0.01, props.curvatureBySlice[slice.id] || { horizontal: 0, vertical: 0 }, props.compositionWidth, props.compositionHeight, pivot, resolvedSource === "pattern" || route !== "inherit");
+      const patternCanvas = document.createElement("canvas");
+      props.drawPatternTexture(patternCanvas, slice);
+      const patternTexture = new THREE.CanvasTexture(patternCanvas);
+      patternTexture.colorSpace = THREE.SRGBColorSpace;
+      patternTexture.minFilter = THREE.LinearMipmapLinearFilter;
+      patternTexture.magFilter = THREE.LinearFilter;
+      patternTexture.wrapS = patternTexture.wrapT = THREE.ClampToEdgeWrapping;
+      patternTexture.generateMipmaps = true;
+      patternTexture.anisotropy = runtime.renderer.capabilities.getMaxAnisotropy();
+      runtime.patternTextures.set(slice.id, patternTexture);
+      const sourceTexture = resolvedSource === "pattern" ? patternTexture : runtime.externalTextures[resolvedSource];
       const front = new THREE.MeshBasicMaterial({ map: sourceTexture, color: sourceTexture ? 0xffffff : resolvedSource === "ndi" ? 0x5a7380 : 0x725d7f, side: THREE.DoubleSide, toneMapped: false, fog: false, depthTest: true, depthWrite: true });
       const body = new THREE.MeshStandardMaterial({ color: 0x252a2d, roughness: 0.78, metalness: 0.28, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geometry, [front, body]) as unknown as SliceObject;
@@ -485,6 +516,8 @@ export default function ThreeSimulation(props: Props) {
       const saved = props.transforms[slice.id];
       mesh.position.fromArray(saved?.position || initialPosition);
       if (saved) mesh.rotation.fromArray([...saved.rotation, "XYZ"]);
+      mesh.scale.fromArray(saved?.scale || [1, 1, 1]);
+      mesh.visible = props.visibleIds.includes(slice.id);
       const selected = props.selectedIds.includes(slice.id);
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: selected ? 1 : 0, depthWrite: false }));
       edges.visible = selected;
@@ -495,7 +528,7 @@ export default function ThreeSimulation(props: Props) {
     });
     runtime.updateClipping();
     runtime.renderer.render(runtime.scene, runtime.camera);
-  }, [props.slices, props.compositionWidth, props.compositionHeight, props.masterPitchMm, props.pitchBySlice, props.depthBySlice, props.curvatureBySlice, props.pivotBySlice, props.transforms, props.source, props.sourceOverrides, props.sourceMedia.video, props.sourceMedia.ndi, props.sourceMedia.spout, props.sourceQuality]);
+  }, [props.slices, props.compositionWidth, props.compositionHeight, props.masterPitchMm, props.pitchBySlice, props.depthBySlice, props.curvatureBySlice, props.pivotBySlice, props.transforms, props.visibleIds, props.source, props.sourceOverrides, props.sourceMedia.video, props.sourceMedia.ndi, props.sourceMedia.spout, props.sourceQuality, props.drawPatternTexture]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -504,20 +537,24 @@ export default function ThreeSimulation(props: Props) {
       const edges = mesh.children[0] as THREE.LineSegments<THREE.EdgesGeometry, THREE.LineBasicMaterial> | undefined;
       if (edges) { const selected = props.selectedIds.includes(id); edges.visible = selected; edges.material.opacity = selected ? 1 : 0; }
     });
-    const selected = props.selectedIds.map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[];
+    const selected = props.selectedIds.filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[];
     if (!selected.length) { runtime.transform.detach(); runtime.renderer.render(runtime.scene, runtime.camera); return; }
     runtime.proxy.position.set(0, 0, 0);
     selected.forEach((mesh) => runtime.proxy.position.add(mesh.position));
     runtime.proxy.position.multiplyScalar(1 / selected.length);
+    runtime.proxy.scale.set(1, 1, 1);
     if (props.transformSpace === "local") runtime.proxy.quaternion.copy(selected[selected.length - 1].quaternion); else runtime.proxy.rotation.set(0, 0, 0);
     runtime.transform.attach(runtime.proxy);
     runtime.renderer.render(runtime.scene, runtime.camera);
-  }, [props.selectedIds, props.transformSpace, props.transforms, props.pivotBySlice]);
+  }, [props.selectedIds, props.lockedIds, props.visibleIds, props.transformSpace, props.transforms, props.pivotBySlice]);
+
+  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.meshes.forEach((mesh, id) => { mesh.visible = props.visibleIds.includes(id); }); runtime.renderer.render(runtime.scene, runtime.camera); }, [props.visibleIds]);
 
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transform.setMode(props.transformMode); runtime.renderer.render(runtime.scene, runtime.camera); }, [props.transformMode]);
-  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transform.setSpace(props.transformSpace); const selected = props.selectedIds.map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[]; if (selected.length && props.transformSpace === "local") runtime.proxy.quaternion.copy(selected[selected.length - 1].quaternion); else runtime.proxy.rotation.set(0, 0, 0); runtime.renderer.render(runtime.scene, runtime.camera); }, [props.transformSpace, props.selectedIds, props.transforms, props.pivotBySlice]);
+  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transform.setSpace(props.transformSpace); const selected = props.selectedIds.filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[]; if (selected.length && props.transformSpace === "local") runtime.proxy.quaternion.copy(selected[selected.length - 1].quaternion); else runtime.proxy.rotation.set(0, 0, 0); runtime.renderer.render(runtime.scene, runtime.camera); }, [props.transformSpace, props.selectedIds, props.lockedIds, props.visibleIds, props.transforms, props.pivotBySlice]);
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.grid.visible = props.gridVisible; if (runtime.floor) runtime.floor.visible = props.floorVisible; const level = THREE.MathUtils.clamp(props.backgroundLevel / 100, 0, 2), base = new THREE.Color(0x090b0c), floorColor = new THREE.Color(0x111518); base.multiplyScalar(level); floorColor.multiplyScalar(level); runtime.scene.background = base; if (runtime.floor) runtime.floor.material.color.copy(floorColor); runtime.renderer.render(runtime.scene, runtime.camera); }, [props.gridVisible, props.floorVisible, props.backgroundLevel]);
   useEffect(() => { if (props.fitSignal) runtimeRef.current?.fit(); }, [props.fitSignal]);
+  useEffect(() => { if (props.focusSignal) runtimeRef.current?.focusSelection(); }, [props.focusSignal]);
 
   return <div className="three-view" ref={mountRef}>
     {!props.slices.length && <div className="three-empty"><strong>Import a Resolume XML map</strong><span>Every slice will appear here as a physically sized 3D screen.</span></div>}

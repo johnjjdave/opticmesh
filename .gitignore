@@ -45,6 +45,7 @@ next-env.d.ts
 /desktop/node_modules/
 /desktop/dist/
 /desktop/release/
+/desktop/.electron-cache/
 /desktop/work/
 /desktop/src-tauri/
 /native/build/

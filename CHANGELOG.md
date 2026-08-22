@@ -1,6 +1,37 @@
 # Changelog
 
-All notable user-facing changes to LO2S Pattern Lab are documented here. Each release records new features, improvements, bug fixes, compatibility notes, and known limitations relative to the previous published version.
+All notable user-facing changes to OpticMesh are documented here. Each release records new features, improvements, bug fixes, compatibility notes, and known limitations relative to the previous published version.
+
+## [1.3.3 Beta] - 2026-08-22
+
+- Fixed the root cause of NDI and Spout senders stopping on real test-pattern frames: the Windows native frame pipe now reads RGBA data in binary mode.
+- Added regression coverage for Ctrl+Z, CR/LF, and arbitrary RGBA byte values using the same split header/pixel writes as the desktop application.
+- Reverified mutually exclusive NDI and Spout output at the reported 11776 × 3072 Resolume input-map resolution.
+
+## [1.3.2 Beta] - 2026-08-22
+
+- Fixed the uncaught Electron `EPIPE` exception when a native NDI or Spout sender closes while a frame is being delivered.
+- Added guarded native-output writes and process-specific callbacks so stopping, restarting, or switching output protocols cannot write into a stale sender.
+- Kept native sender failures inside the Live Test Pattern status panel instead of displaying a Windows main-process error dialog.
+- Verified Spout and NDI output using the reported 11776 × 3072 Resolume input map.
+
+## [1.3.1 Beta] - 2026-08-22
+
+- Fixed desktop project saving so one native save dialog writes exactly one self-contained `.lo2s` file.
+- Moved the 3D scene hierarchy to the right inspector above Slice Selection and removed the duplicate simulation Project Tools panel.
+- Gave every 3D slice its own generated pattern texture so overlapping input-map slices cannot overwrite one another in simulation.
+- Added mutually exclusive NDI or Spout output for the generated Resolume Pixel Map test pattern.
+- Added full-resolution RGBA streaming, automatic pattern refreshes, and live output dimension changes when the Advanced Output map updates.
+- Replaced the application artwork with the new symbol-only OpticMesh icon.
+
+## [1.3.0 Beta] - 2026-08-22
+
+- Renamed the application to OpticMesh and introduced the new application icon and Windows identity.
+- Added a Cinema 4D-style 3D hierarchy with visible-by-default imported screens and slices, per-object visibility and locking, local names, search, grouping, and group transforms.
+- Added selection scaling and camera focus while preserving simulation-only visibility during exports.
+- Fixed fullscreen 3D sizing and camera projection updates.
+- Extended the established XYZ mouse-wheel adjustment behavior to numeric parameter fields.
+- Replaced the two-file project export with one versioned, self-contained `.lo2s` project file.
 
 ## [1.2.0 Beta] - 2026-08-02
 
@@ -124,7 +155,7 @@ This is the first public beta of the 3D Simulation workspace and the main public
 
 - NDI and Spout require the Windows desktop build and are unavailable in a standard web browser.
 - High-resolution NDI, Spout, and video-device feeds increase decoding, memory, GPU-upload, and rendering load; NDI High Quality can have more latency on demanding sources or systems.
-- OBJ preserves geometry, UVs, and final world placement but cannot represent the editable per-object pivot hierarchy used by Pattern Lab. Use GLB, glTF, or MVR when hierarchy and transform nodes matter.
+- OBJ preserves geometry, UVs, and final world placement but cannot represent the editable per-object pivot hierarchy used by OpticMesh. Use GLB, glTF, or MVR when hierarchy and transform nodes matter.
 - MVR export targets version 1.5 for compatibility and carries mesh geometry rather than lighting-fixture data.
 - The Windows beta executable is unsigned, so Microsoft Defender SmartScreen may show an unknown-publisher warning.
 
@@ -134,7 +165,7 @@ This is the first public beta of the 3D Simulation workspace and the main public
 
 ## [1.0.1] - 2026-07-31
 
-Previous stable release and comparison baseline for v1.2.0 Beta. See the [v1.0.1 release](https://github.com/johnjjdave/lo2s-pattern-lab/releases/tag/v1.0.1) for its packaged files.
+Previous stable release and comparison baseline for v1.2.0 Beta. See the [v1.0.1 release](https://github.com/johnjjdave/opticmesh/releases/tag/v1.0.1) for its packaged files.
 
-[1.2.0 Beta]: https://github.com/johnjjdave/lo2s-pattern-lab/compare/v1.0.1...v1.2.0-beta
+[1.2.0 Beta]: https://github.com/johnjjdave/opticmesh/compare/v1.0.1...v1.2.0-beta
 

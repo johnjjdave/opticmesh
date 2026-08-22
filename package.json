@@ -1,24 +1,24 @@
 {
-  "name": "lo2s-pattern-lab",
-  "version": "1.2.0-beta",
+  "name": "opticmesh",
+  "version": "1.3.3-beta",
   "private": true,
-  "description": "Pixel-perfect LED test pattern and Resolume pixel map generator.",
+  "description": "OpticMesh LED test-pattern, Resolume pixel-map, and 3D simulation workspace.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/johnjjdave/lo2s-pattern-lab.git"
+    "url": "https://github.com/johnjjdave/opticmesh.git"
   },
   "homepage": "https://patternlab.lo2s.com/",
   "bugs": {
-    "url": "https://github.com/johnjjdave/lo2s-pattern-lab/issues"
+    "url": "https://github.com/johnjjdave/opticmesh/issues"
   },
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
-    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"

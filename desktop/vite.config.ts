@@ -7,8 +7,10 @@ export default defineConfig({
   base: "./",
   publicDir: resolve(__dirname, "../public"),
   plugins: [react()],
+  css: { postcss: { plugins: [] } },
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    cssMinify: false,
   },
 });

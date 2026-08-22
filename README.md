@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="public/brand/lo2s-pattern-lab-icon.png" width="180" alt="LO2S Pattern Lab icon">
+  <img src="public/brand/opticmesh-icon.png" width="180" alt="OpticMesh icon">
 </p>
 
-# LO2S - Pattern Lab
+# OpticMesh
 
-LO2S Pattern Lab is an open-source LED test-pattern, Resolume pixel-map, and 3D WYSIWYG simulation workspace. It is designed for technical production workflows.
+OpticMesh is an open-source LED test-pattern, Resolume pixel-map, and 3D WYSIWYG simulation workspace. It is designed for technical production workflows.
 
-**Current release: LO2S Pattern Lab v1.2.0 Beta**
+**Current release: OpticMesh v1.3.3 Beta**
 
-[Download the Windows portable app](https://github.com/johnjjdave/lo2s-pattern-lab/releases/tag/v1.2.0-beta) · [Open the web app](https://patternlab.lo2s.com/)
+[Download the Windows portable app](https://github.com/johnjjdave/opticmesh/releases/tag/v1.3.3-beta) · [Open the web app](https://patternlab.lo2s.com/)
 
 [Read the complete v1.0.1 → v1.2.0 Beta changelog](CHANGELOG.md)
 
@@ -63,7 +63,7 @@ NDI and Spout require the Windows desktop application and its native source brid
 
 ## Windows release
 
-Download `LO2S-Pattern-Lab-3D-Beta-1.2.0-beta-Portable.exe` from the [v1.2.0 Beta release](https://github.com/johnjjdave/lo2s-pattern-lab/releases/tag/v1.2.0-beta). The portable build does not require installation and uses a separate beta application identity.
+Download `OpticMesh-1.3.3-beta-Portable.exe` from the [v1.3.3 Beta release](https://github.com/johnjjdave/opticmesh/releases/tag/v1.3.3-beta). The portable build does not require installation.
 
 This is an unsigned open-source beta. Windows Defender SmartScreen may show an “unknown publisher” warning.
 
@@ -71,10 +71,10 @@ The desktop application processes projects, Resolume XML files, logos, source fr
 
 ## Recommended Resolume workflow
 
-**Physical accuracy depends on pixel pitch:** Set the pixel pitch to the exact manufacturer-specified pitch of the real LED product before arranging the screens in 3D. Pattern Lab uses the slice raster dimensions and configured pixel pitch to calculate each screen's physical width and height; an incorrect pitch produces an incorrectly scaled 3D simulation even when the Resolume XML pixel map is correct.
+**Physical accuracy depends on pixel pitch:** Set the pixel pitch to the exact manufacturer-specified pitch of the real LED product before arranging the screens in 3D. OpticMesh uses the slice raster dimensions and configured pixel pitch to calculate each screen's physical width and height; an incorrect pitch produces an incorrectly scaled 3D simulation even when the Resolume XML pixel map is correct.
 
 1. Configure the composition and slices in Resolume Advanced Output.
-2. Open **Resolume Pixel Map** in Pattern Lab and import the XML preset.
+2. Open **Resolume Pixel Map** in OpticMesh and import the XML preset.
 3. Set the **Pixel pitch** to the exact real-world pitch of the LED product, then confirm the composition, physical scale, slice sizes, and pixel-map output.
 4. Open **3D Simulation** and arrange the slices to match the physical LED setup.
 5. Select Pattern Generator, Video Devices, NDI, or Spout as the global source.
@@ -85,11 +85,11 @@ Checker blocks are calculated from LED cabinet dimensions and pixel pitch; they 
 
 ## Beta notes
 
-- The web app provides the full browser-compatible Pattern Lab interface, including 3D layout and pattern simulation.
+- The web app provides the full browser-compatible OpticMesh interface, including 3D layout and pattern simulation.
 - NDI and Spout are Windows desktop features because browsers cannot directly access those native protocols.
 - MVR export targets version 1.5 for broader compatibility with current lighting and visualization software.
 - Live-input performance depends on source resolution, codec, network conditions, GPU, and scene complexity.
-- Report reproducible problems through [GitHub Issues](https://github.com/johnjjdave/lo2s-pattern-lab/issues).
+- Report reproducible problems through [GitHub Issues](https://github.com/johnjjdave/opticmesh/issues).
 
 ## Development
 

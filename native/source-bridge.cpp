@@ -277,6 +277,55 @@ bool write_frame(const unsigned char* pixels, std::uint32_t width, std::uint32_t
   return std::fflush(stdout) == 0;
 }
 
+bool read_exact(void* destination, std::size_t size) {
+  auto* bytes = static_cast<unsigned char*>(destination);
+  std::size_t offset = 0;
+  while (offset < size) {
+    const auto count = std::fread(bytes + offset, 1, size - offset, stdin);
+    if (!count) return false;
+    offset += count;
+  }
+  return true;
+}
+
+struct OutputFrameState {
+  std::mutex mutex;
+  std::condition_variable changed;
+  std::vector<unsigned char> pixels;
+  unsigned width = 0;
+  unsigned height = 0;
+  unsigned fps_n = 30;
+  unsigned fps_d = 1;
+  std::uint64_t version = 0;
+  bool closed = false;
+};
+
+void read_output_frames(OutputFrameState& state) {
+  FrameHeader header;
+  while (read_exact(&header, sizeof(header))) {
+    if (header.magic != 0x4632534c || header.version != 1 || !header.width || !header.height
+        || header.stride != header.width * 4 || header.payload_size != header.stride * header.height
+        || header.payload_size > 512u * 1024u * 1024u) break;
+    std::vector<unsigned char> pixels(header.payload_size);
+    if (!read_exact(pixels.data(), pixels.size())) break;
+    {
+      std::lock_guard<std::mutex> lock(state.mutex);
+      state.pixels.swap(pixels);
+      state.width = header.width;
+      state.height = header.height;
+      state.fps_n = header.fps_n ? header.fps_n : 30;
+      state.fps_d = header.fps_d ? header.fps_d : 1;
+      state.version += 1;
+    }
+    state.changed.notify_all();
+  }
+  {
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.closed = true;
+  }
+  state.changed.notify_all();
+}
+
 unsigned char* fit_frame_width(unsigned char* source, unsigned source_width, unsigned source_height, unsigned maximum_width,
                                std::vector<unsigned char>& resized, unsigned& output_width, unsigned& output_height) {
   output_width = source_width;
@@ -425,7 +474,7 @@ int capture_ndi(const std::string& requested_name, bool low_latency) {
   // does not inherit NDI's heavily compressed low-bandwidth proxy.
   settings.bandwidth = NDIlib_recv_bandwidth_highest;
   settings.allow_video_fields = false;
-  settings.p_ndi_recv_name = "LO2S Pattern Lab 3D Beta";
+  settings.p_ndi_recv_name = "OpticMesh 3D Beta";
   auto receiver = ndi.api->recv_create_v3(&settings);
   ndi.api->find_destroy(finder);
   if (!receiver) {
@@ -554,6 +603,98 @@ int capture_spout(const std::string& requested_name, bool low_latency) {
   return 0;
 }
 
+int send_ndi(const std::string& sender_name) {
+  NdiApi ndi;
+  std::string error;
+  if (!load_ndi(ndi, error)) { status("error", error); return 2; }
+  NDIlib_send_create_t settings{};
+  settings.p_ndi_name = sender_name.c_str();
+  settings.clock_video = true;
+  settings.clock_audio = false;
+  auto sender = ndi.api->send_create(&settings);
+  if (!sender) { status("error", "The NDI output sender could not be created."); return 3; }
+  OutputFrameState state;
+  std::thread reader(read_output_frames, std::ref(state));
+  std::vector<unsigned char> pixels;
+  std::uint64_t version = 0;
+  unsigned width = 0, height = 0, fps_n = 30, fps_d = 1;
+  while (true) {
+    bool frame_changed = false;
+    {
+      std::unique_lock<std::mutex> lock(state.mutex);
+      if (pixels.empty()) state.changed.wait(lock, [&] { return state.closed || state.version != version; });
+      else state.changed.wait_for(lock, std::chrono::microseconds(static_cast<long long>(1000000ull * fps_d / std::max(1u, fps_n))), [&] { return state.closed || state.version != version; });
+      if (state.closed) break;
+      if (state.version != version) {
+        frame_changed = true;
+        pixels = state.pixels;
+        width = state.width;
+        height = state.height;
+        fps_n = state.fps_n;
+        fps_d = state.fps_d;
+        version = state.version;
+      }
+    }
+    NDIlib_video_frame_v2_t frame{};
+    frame.xres = static_cast<int>(width);
+    frame.yres = static_cast<int>(height);
+    frame.FourCC = NDIlib_FourCC_type_RGBA;
+    frame.frame_rate_N = static_cast<int>(fps_n);
+    frame.frame_rate_D = static_cast<int>(fps_d);
+    frame.picture_aspect_ratio = height ? static_cast<float>(width) / height : 1.0f;
+    frame.frame_format_type = NDIlib_frame_format_type_progressive;
+    frame.timecode = NDIlib_send_timecode_synthesize;
+    frame.p_data = pixels.data();
+    frame.line_stride_in_bytes = static_cast<int>(width * 4);
+    ndi.api->send_send_video_v2(sender, &frame);
+    if (frame_changed) status("connected", sender_name, width, height, static_cast<double>(fps_n) / std::max(1u, fps_d));
+  }
+  if (reader.joinable()) reader.join();
+  ndi.api->send_destroy(sender);
+  return 0;
+}
+
+int send_spout(const std::string& sender_name) {
+  SpoutApi spout;
+  std::string error;
+  if (!load_spout(spout, error)) { status("error", error); return 2; }
+  if (!spout.api->CreateOpenGL(nullptr)) { status("error", "Spout could not create its output context."); return 3; }
+  spout.api->SetSenderName(sender_name.c_str());
+  OutputFrameState state;
+  std::thread reader(read_output_frames, std::ref(state));
+  std::vector<unsigned char> pixels;
+  std::uint64_t version = 0;
+  unsigned width = 0, height = 0, fps_n = 30, fps_d = 1;
+  while (true) {
+    bool frame_changed = false;
+    {
+      std::unique_lock<std::mutex> lock(state.mutex);
+      if (pixels.empty()) state.changed.wait(lock, [&] { return state.closed || state.version != version; });
+      else state.changed.wait_for(lock, std::chrono::microseconds(static_cast<long long>(1000000ull * fps_d / std::max(1u, fps_n))), [&] { return state.closed || state.version != version; });
+      if (state.closed) break;
+      if (state.version != version) {
+        frame_changed = true;
+        pixels = state.pixels;
+        width = state.width;
+        height = state.height;
+        fps_n = state.fps_n;
+        fps_d = state.fps_d;
+        version = state.version;
+      }
+    }
+    if (!spout.api->SendImage(pixels.data(), width, height, GL_RGBA, false)) {
+      status("error", "Spout could not publish the generated test pattern.");
+      Sleep(100);
+      continue;
+    }
+    if (frame_changed) status("connected", sender_name, width, height, static_cast<double>(fps_n) / std::max(1u, fps_d));
+  }
+  if (reader.joinable()) reader.join();
+  spout.api->ReleaseSender();
+  spout.api->CloseOpenGL();
+  return 0;
+}
+
 int self_test_shared_memory() {
   SharedFrameMapping shared;
   if (!shared.create(4, 2, 1)) return 2;
@@ -588,6 +729,7 @@ std::string argument_value(int argc, char** argv, const std::string& name) {
 } // namespace
 
 int main(int argc, char** argv) {
+  _setmode(_fileno(stdin), _O_BINARY);
   _setmode(_fileno(stdout), _O_BINARY);
   const std::string operation = argc > 1 ? argv[1] : "";
   const std::string kind = argc > 2 ? argv[2] : "";
@@ -602,6 +744,11 @@ int main(int argc, char** argv) {
     if (kind == "ndi") return capture_ndi(source, quality == "latency");
     if (kind == "spout") return capture_spout(source, quality == "latency");
   }
-  std::cerr << "Usage: lo2s-source-bridge --list ndi|spout OR --capture ndi|spout --source name --quality latency|quality" << std::endl;
+  if (operation == "--send") {
+    const std::string name = argument_value(argc, argv, "--name");
+    if (kind == "ndi") return send_ndi(name.empty() ? "OpticMesh" : name);
+    if (kind == "spout") return send_spout(name.empty() ? "OpticMesh" : name);
+  }
+  std::cerr << "Usage: lo2s-source-bridge --list ndi|spout OR --capture ndi|spout --source name --quality latency|quality OR --send ndi|spout --name OpticMesh" << std::endl;
   return 1;
 }

@@ -1,16 +1,16 @@
 {
-  "name": "lo2s-pattern-lab-desktop",
-  "version": "1.2.0-beta",
+  "name": "opticmesh-desktop",
+  "version": "1.3.3-beta",
   "packageManager": "pnpm@11.18.0",
   "private": true,
-  "description": "Experimental LO2S Pattern Lab 3D simulation beta.",
+  "description": "OpticMesh LED test-pattern, Resolume pixel-map, and 3D simulation workspace.",
   "license": "MIT",
   "main": "electron-main.cjs",
-  "author": "LO2S Pattern Lab contributors",
-  "homepage": "https://github.com/johnjjdave/lo2s-pattern-lab",
+  "author": "OpticMesh contributors",
+  "homepage": "https://github.com/johnjjdave/opticmesh",
   "repository": {
     "type": "git",
-    "url": "https://github.com/johnjjdave/lo2s-pattern-lab.git"
+    "url": "https://github.com/johnjjdave/opticmesh.git"
   },
   "scripts": {
     "build": "electron-builder --win portable --x64"
@@ -20,9 +20,9 @@
     "electron-builder": "26.15.3"
   },
   "build": {
-    "appId": "com.lo2s.patternlab.3dbeta",
-    "productName": "LO2S Pattern Lab 3D Beta",
-    "artifactName": "LO2S-Pattern-Lab-3D-Beta-${version}-Portable.${ext}",
+    "appId": "com.lo2s.opticmesh",
+    "productName": "OpticMesh Beta",
+    "artifactName": "OpticMesh-${version}-Portable.${ext}",
     "asar": true,
     "asarUnpack": [
       "native/**/*"
@@ -39,7 +39,7 @@
       "package.json"
     ],
     "win": {
-      "icon": "icons/icon.ico",
+      "icon": "icons/icon.png",
       "target": [
         {
           "target": "portable",

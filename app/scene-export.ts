@@ -68,7 +68,7 @@ function buildScene(options: SceneExportOptions): BuiltScene {
   const textureCanvas = document.createElement("canvas");
   options.drawPatternTexture(textureCanvas);
   const texture = new THREE.CanvasTexture(textureCanvas);
-  texture.name = "LO2S Pattern Map";
+  texture.name = "OpticMesh Pattern Map";
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -109,6 +109,7 @@ function buildScene(options: SceneExportOptions): BuiltScene {
     const saved = options.transforms[slice.id];
     mesh.position.fromArray(saved?.position || initialPosition);
     if (saved) mesh.rotation.fromArray([...saved.rotation, "XYZ"]);
+    mesh.scale.fromArray(saved?.scale || [1, 1, 1]);
     mesh.userData = {
       lo2sUuid: deterministicUuid(`lo2s:slice:${slice.id}`),
       sliceId: slice.id,
@@ -379,8 +380,8 @@ function createMvrXml(options: SceneExportOptions, geometryFilename: string) {
   const layerUuid = deterministicUuid(`lo2s:layer:${options.projectName}`);
   const sceneUuid = deterministicUuid(`lo2s:scene:${options.projectName}`);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<GeneralSceneDescription verMajor="1" verMinor="5" provider="LO2S Pattern Lab" providerVersion="1.2.0-beta">
-  <UserData><Data provider="LO2S Pattern Lab" ver="1.2"><SliceCount>${options.slices.length}</SliceCount></Data></UserData>
+<GeneralSceneDescription verMajor="1" verMinor="5" provider="OpticMesh" providerVersion="1.3.3-beta">
+  <UserData><Data provider="OpticMesh" ver="1.3"><SliceCount>${options.slices.length}</SliceCount></Data></UserData>
   <Scene>
     <AUXData/>
     <Layers>

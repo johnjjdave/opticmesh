@@ -91,6 +91,10 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
   linkLatestResolumeMap: () => ipcRenderer.invoke("resolume:link-latest"),
   unlinkResolumeMap: () => ipcRenderer.invoke("resolume:unlink"),
   saveExport: (filename, mimeType, data, category) => ipcRenderer.invoke("export:save", { filename, mimeType, data, category }),
+  saveProject: (filename, data) => ipcRenderer.invoke("project:save", { filename, data }),
+  startPatternOutput: (kind, name) => ipcRenderer.invoke("output:start", { kind, name }),
+  sendPatternOutputFrame: (width, height, data) => ipcRenderer.invoke("output:frame", { width, height, data }),
+  stopPatternOutput: () => ipcRenderer.invoke("output:stop"),
   listNativeSources: (kind) => ipcRenderer.invoke("source:list", kind),
   connectNativeSource: (kind, sourceId, quality) => { stopSharedFrames(); return ipcRenderer.invoke("source:connect", { kind, sourceId, quality }); },
   disconnectNativeSource: () => { stopSharedFrames(); return ipcRenderer.invoke("source:disconnect"); },
@@ -111,6 +115,11 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
     return () => ipcRenderer.removeListener("source:status", listener);
   },
   onNativeSourceMetrics: (callback) => { sharedMetricListeners.add(callback); return () => sharedMetricListeners.delete(callback); },
+  onPatternOutputStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on("output:status", listener);
+    return () => ipcRenderer.removeListener("output:status", listener);
+  },
   onResolumeXmlUpdated: (callback) => {
     const listener = (_event, result) => callback(result);
     ipcRenderer.on("resolume:xml-updated", listener);

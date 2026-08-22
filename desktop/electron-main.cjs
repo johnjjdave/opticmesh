@@ -15,6 +15,11 @@ let lastLinkedSignature = "";
 let nativeSourceProcess = null;
 let nativeSourceOwner = null;
 let nativeFramePending = false;
+let nativeOutputProcess = null;
+let nativeOutputOwner = null;
+let nativeOutputWriting = false;
+let nativeOutputLatest = null;
+let nativeOutputLastError = "";
 let exportDirectories = null;
 const execFileAsync = promisify(execFile);
 let nativeBridgePath = path.join(appRoot, "native", "lo2s-source-bridge.exe");
@@ -33,8 +38,8 @@ function isNewerVersion(candidate, current) {
 
 async function checkForUpdate() {
   try {
-    const response = await net.fetch("https://api.github.com/repos/johnjjdave/lo2s-pattern-lab/releases/latest", {
-      headers: { Accept: "application/vnd.github+json", "User-Agent": `LO2S-Pattern-Lab/${app.getVersion()}` },
+    const response = await net.fetch("https://api.github.com/repos/johnjjdave/opticmesh/releases/latest", {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": `OpticMesh/${app.getVersion()}` },
     });
     if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
     const release = await response.json();
@@ -131,6 +136,67 @@ async function stopNativeSource() {
     const timer = setTimeout(() => { try { child.kill(); } catch {} finish(); }, 900);
     child.once("exit", finish);
   });
+}
+
+async function stopNativeOutput() {
+  const child = nativeOutputProcess;
+  nativeOutputProcess = null;
+  nativeOutputOwner = null;
+  nativeOutputWriting = false;
+  nativeOutputLatest = null;
+  nativeOutputLastError = "";
+  if (!child || child.killed) return;
+  try { child.stdin?.end(); } catch {}
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true; clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { try { child.kill(); } catch {} finish(); }, 1200);
+    child.once("exit", finish);
+  });
+}
+
+function reportNativeOutputError(child, error) {
+  const message = error?.code === "EPIPE"
+    ? (nativeOutputLastError || "The native output sender closed unexpectedly. Check the output status and try starting it again.")
+    : (error?.message || "The native output sender stopped unexpectedly.");
+  if (nativeOutputProcess !== child) return;
+  nativeOutputLastError = message;
+  const owner = nativeOutputOwner;
+  nativeOutputProcess = null;
+  nativeOutputOwner = null;
+  nativeOutputWriting = false;
+  nativeOutputLatest = null;
+  if (owner && !owner.isDestroyed()) owner.send("output:status", { status: "error", name: message });
+  try { child.stdin?.destroy(); } catch {}
+  try { if (!child.killed) child.kill(); } catch {}
+}
+
+function flushNativeOutput() {
+  const child = nativeOutputProcess;
+  const frame = nativeOutputLatest;
+  if (!child || child.killed || child.exitCode !== null || !child.stdin?.writable || child.stdin.destroyed || nativeOutputWriting || !frame) return;
+  nativeOutputLatest = null;
+  nativeOutputWriting = true;
+  const header = Buffer.allocUnsafe(32);
+  header.writeUInt32LE(0x4632534c, 0);
+  header.writeUInt32LE(1, 4);
+  header.writeUInt32LE(frame.width, 8);
+  header.writeUInt32LE(frame.height, 12);
+  header.writeUInt32LE(frame.width * 4, 16);
+  header.writeUInt32LE(frame.fpsN, 20);
+  header.writeUInt32LE(frame.fpsD, 24);
+  header.writeUInt32LE(frame.data.length, 28);
+  try {
+    child.stdin.write(header, (error) => { if (error) reportNativeOutputError(child, error); });
+    child.stdin.write(frame.data, (error) => {
+      if (error) { reportNativeOutputError(child, error); return; }
+      if (nativeOutputProcess !== child) return;
+      nativeOutputWriting = false;
+      flushNativeOutput();
+    });
+  } catch (error) {
+    reportNativeOutputError(child, error);
+  }
 }
 
 async function listNativeSources(kind) {
@@ -232,7 +298,7 @@ async function startResolumeLink(window) {
 
 function createWindow() {
   const window = new BrowserWindow({
-    title: "LO2S Pattern Lab",
+    title: "OpticMesh",
     width: 1440,
     height: 940,
     minWidth: 1024,
@@ -240,7 +306,7 @@ function createWindow() {
     center: true,
     show: false,
     backgroundColor: "#18191B",
-    icon: path.join(appRoot, "icons", "icon.ico"),
+    icon: path.join(appRoot, "icons", "icon.png"),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(appRoot, "preload.cjs"),
@@ -252,7 +318,7 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => window.show());
-  window.on("closed", () => { stopResolumeLink(); void stopNativeSource(); });
+  window.on("closed", () => { stopResolumeLink(); void stopNativeSource(); void stopNativeOutput(); });
   window.loadFile(path.join(appRoot, "dist", "index.html"));
 }
 
@@ -332,6 +398,58 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("source:disconnect", async () => { await stopNativeSource(); return { ok: true }; });
+  ipcMain.handle("output:start", async (event, payload) => {
+    const kind = payload?.kind;
+    if (kind !== "ndi" && kind !== "spout") return { ok: false, error: "Choose NDI or Spout output." };
+    if (!fs.existsSync(nativeBridgePath)) return { ok: false, error: "The native output helper is missing." };
+    await stopNativeOutput();
+    const child = spawn(nativeBridgePath, ["--send", kind, "--name", String(payload?.name || "OpticMesh")], { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    nativeOutputProcess = child;
+    nativeOutputOwner = event.sender;
+    nativeOutputLastError = "";
+    child.stdin.on("error", (error) => reportNativeOutputError(child, error));
+    let stderrBuffer = "";
+    child.stderr.on("data", (chunk) => {
+      stderrBuffer += chunk.toString("utf8");
+      const lines = stderrBuffer.split(/\r?\n/);
+      stderrBuffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim() || !nativeOutputOwner || nativeOutputOwner.isDestroyed()) continue;
+        try {
+          const status = JSON.parse(line);
+          if (status.status === "error") nativeOutputLastError = status.name || "Native output failed.";
+          nativeOutputOwner.send("output:status", status);
+        }
+        catch { nativeOutputOwner.send("output:status", { status: "message", name: line.trim() }); }
+      }
+    });
+    child.once("error", (error) => {
+      reportNativeOutputError(child, error);
+    });
+    child.once("exit", (code) => {
+      if (nativeOutputProcess !== child) return;
+      if (nativeOutputOwner && !nativeOutputOwner.isDestroyed()) nativeOutputOwner.send("output:status", { status: code === 0 ? "disconnected" : "error", name: code === 0 ? "Output stopped" : (nativeOutputLastError || `Native sender stopped (${code})`) });
+      nativeOutputProcess = null;
+      nativeOutputOwner = null;
+      nativeOutputWriting = false;
+      nativeOutputLatest = null;
+      nativeOutputLastError = "";
+    });
+    event.sender.send("output:status", { status: "connecting", name: `Starting ${kind.toUpperCase()} output…` });
+    return { ok: true };
+  });
+  ipcMain.handle("output:frame", async (event, payload) => {
+    if (event.sender !== nativeOutputOwner || !nativeOutputProcess) return { ok: false, error: "Output is not running." };
+    const width = Math.max(1, Math.floor(Number(payload?.width) || 0));
+    const height = Math.max(1, Math.floor(Number(payload?.height) || 0));
+    const data = Buffer.from(payload?.data || []);
+    const expected = width * height * 4;
+    if (expected !== data.length || expected > 512 * 1024 * 1024) return { ok: false, error: "The output frame dimensions are invalid." };
+    nativeOutputLatest = { width, height, fpsN: 30, fpsD: 1, data };
+    flushNativeOutput();
+    return { ok: true };
+  });
+  ipcMain.handle("output:stop", async () => { await stopNativeOutput(); return { ok: true }; });
   ipcMain.handle("app:check-update", checkForUpdate);
   ipcMain.handle("app:open-external", async (_event, requestedUrl) => {
     const url = new URL(String(requestedUrl || ""));
@@ -352,7 +470,7 @@ app.whenReady().then(async () => {
     const labels = { png: "PNG image", glb: "glTF Binary", zip: "ZIP package", mvr: "MVR 1.5 scene meshes", obj: "Wavefront OBJ", gltf: "glTF scene" };
     const directories = await loadExportDirectories();
     const result = await dialog.showSaveDialog({
-      title: category === "png" ? "Export LO2S PNG" : "Export LO2S 3D scene",
+      title: category === "png" ? "Export OpticMesh PNG" : "Export OpticMesh 3D scene",
       defaultPath: path.join(directories[category] || app.getPath("documents"), filename),
       filters: [{ name: labels[extension] || "3D scene", extensions: [extension || "glb"] }],
     });
@@ -360,6 +478,25 @@ app.whenReady().then(async () => {
     try {
       await fs.promises.writeFile(result.filePath, Buffer.from(payload.data));
       await rememberExportDirectory(category, result.filePath);
+      return { ok: true, path: result.filePath };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("project:save", async (_event, payload) => {
+    let filename = path.basename(String(payload?.filename || "opticmesh-project.lo2s"));
+    if (path.extname(filename).toLowerCase() !== ".lo2s") filename += ".lo2s";
+    const directories = await loadExportDirectories();
+    const result = await dialog.showSaveDialog({
+      title: "Save OpticMesh project",
+      defaultPath: path.join(directories.project || app.getPath("documents"), filename),
+      filters: [{ name: "OpticMesh project", extensions: ["lo2s"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+    try {
+      await fs.promises.writeFile(result.filePath, Buffer.from(payload?.data || []));
+      await rememberExportDirectory("project", result.filePath);
       return { ok: true, path: result.filePath };
     } catch (error) {
       return { ok: false, error: error.message };
@@ -378,5 +515,5 @@ app.whenReady().then(async () => {
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on("before-quit", () => { stopResolumeLink(); void stopNativeSource(); });
+app.on("before-quit", () => { stopResolumeLink(); void stopNativeSource(); void stopNativeOutput(); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

@@ -48,7 +48,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LO2S-Pattern-Lab-Windows
+          name: OpticMesh-Windows
           path: |
             desktop/release/*-Portable.exe
             desktop/release/SHA256SUMS.txt

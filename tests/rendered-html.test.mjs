@@ -13,12 +13,12 @@ async function render() {
   );
 }
 
-test("server-renders the LO2S Pattern Lab workspace", async () => {
+test("server-renders the OpticMesh workspace", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>LO2S Pattern Lab/);
+  assert.match(html, /<title>OpticMesh/);
   assert.match(html, /Resolume Pixel Map/);
   assert.match(html, /Linked wall calculator/);
   assert.match(html, /Fit Canvas/);
@@ -97,7 +97,7 @@ test("keeps the desktop beta hotfix safeguards in source", async () => {
     readFile(new URL("../desktop/electron-main.cjs", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
-  assert.match(page, /Pattern Lab V\.\{DISPLAY_VERSION\}/);
+  assert.match(page, /OpticMesh V\.\{DISPLAY_VERSION\}/);
   assert.match(page, /max="360"/);
   assert.match(page, /invalidCurvedDepthSlices/);
   assert.match(page, /document\.fullscreenElement === host/);
