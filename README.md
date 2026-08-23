@@ -10,14 +10,14 @@ OpticMesh is an open-source LED test-pattern, Resolume pixel-map, and 3D WYSIWYG
 
 [Download the Windows portable app](https://github.com/johnjjdave/opticmesh/releases/tag/v1.3.3-beta) · [Open the web app](https://patternlab.lo2s.com/)
 
-[Read the complete v1.0.1 → v1.2.0 Beta changelog](CHANGELOG.md)
+[Read the complete changelog](CHANGELOG.md)
 
 ## What is included
 
 ### Test Patterns
 
 - Linked physical-size, raster-resolution, pixel-pitch, and cabinet calculations
-- Arithmetic expressions inside supported numeric fields
+- Arithmetic expressions inside supported numeric fields, with mouse-wheel adjustment across numeric parameter controls
 - Metric grid, cabinet IDs, color bars, grayscale, and native pixel-check patterns
 - Configurable labels, guides, circles, safe area, center marker, and uploaded logos
 - Unified compact numeric steppers and adjustable line width for the metric grid, borders, cross, circles, and safe area
@@ -34,18 +34,27 @@ OpticMesh is an open-source LED test-pattern, Resolume pixel-map, and 3D WYSIWYG
 - Per-slice information, physical dimensions, and output-map diagnostics
 - Selected-slice and multi-screen PNG export
 - Optional linked XML workflow in the Windows app for automatic map refresh
+- Mutually exclusive NDI or Spout output of the generated test pattern at the exact Resolume input-map dimensions
+- Full-resolution RGBA output that updates when the pattern or linked Advanced Output map changes
 
 ### 3D Simulation — Beta
 
 - Every Resolume XML slice becomes a separately selectable, physically scaled LED screen
-- Pixel-map-accurate cropped UV mapping across the full composition
+- Independent per-slice pattern textures so overlapping input-map slices retain their own correct content
 - Emissive LED materials that preserve the source color and brightness
-- Move and rotate gizmos with local/world axes and arithmetic-enabled transform fields
+- Move, rotate, and scale gizmos with local/world axes and arithmetic-enabled transform fields
 - Bottom-left, bottom-centre, or bottom-right pivots globally or per slice
 - Mutually exclusive horizontal or vertical screen curvature from -360° to +360° with smooth curved extrusion and closed full-cylinder seams
 - Configurable extrusion depth, floor, metre grid, and scene background brightness
-- Multi-selection, undo/redo, saved camera state, and beta project save/load
+- Right-side scene hierarchy with visible-by-default imported screens and slices, per-object visibility and locking, local names, search, grouping, focus, and group transforms
+- Multi-selection, undo/redo, saved camera state, corrected fullscreen perspective, and Fit Scene controls
 - GLB, glTF package, OBJ package, and MVR 1.5 scene export with geometry, UVs, names, and transforms
+
+## Project files
+
+- Projects save as one self-contained `.lo2s` file rather than separate project and XML files
+- The file embeds pattern configuration, Resolume XML data, custom logo data, slice overrides, 3D transforms, hierarchy groups, visibility, locks, and camera state
+- Native desktop save and load dialogs prevent duplicate browser-download files
 
 ## Live video sources
 
@@ -60,6 +69,8 @@ The Windows desktop beta supports:
 - Native-source performance instrumentation for receiver, conversion, copy, and displayed-frame rates
 
 NDI and Spout require the Windows desktop application and its native source bridge. They are not available in the hosted browser version. Higher-resolution live feeds can increase GPU, decoding, and network load depending on the source resolution and number of active feeds.
+
+NDI/Spout source reception and Resolume Pixel Map test-pattern output are separate workflows. Test-pattern output supports either NDI or Spout at one time and preserves RGBA output at the current Advanced Output dimensions.
 
 ## Windows release
 
@@ -79,7 +90,8 @@ The desktop application processes projects, Resolume XML files, logos, source fr
 4. Open **3D Simulation** and arrange the slices to match the physical LED setup.
 5. Select Pattern Generator, Video Devices, NDI, or Spout as the global source.
 6. Apply per-slice source overrides only where needed.
-7. Save the beta project and export the required 3D scene format.
+7. Optionally stream the generated input-map test pattern through NDI or Spout for real-time verification in Resolume.
+8. Save the complete project as one `.lo2s` file and export the required 3D scene format.
 
 Checker blocks are calculated from LED cabinet dimensions and pixel pitch; they are not arbitrary decorative grid sizes.
 
