@@ -10,9 +10,11 @@ LO2S - OpticMesh is an open-source LED test-pattern, Resolume pixel-map, and 3D 
 
 [Download the Windows installer](https://github.com/johnjjdave/opticmesh/releases/download/v0.6.4/LO2S-OpticMesh-0.6.4-beta-Setup.exe)
 
+[Open the OpticMesh web application](https://opticmesh.lo2s.com/)
+
 Version `0.6.4` is the only supported public GitHub release. Earlier builds remain documented in the changelog for product history but are no longer offered as releases. Version `0.7.0` remains unreleased development work.
 
-The product target is an installed Windows executable. Earlier portable and hosted builds are legacy distribution paths and are not the direction of the production release.
+The installed Windows application is the primary production target. The hosted web application provides the browser-compatible OpticMesh workflow at the same stable version.
 
 [Read the complete changelog](CHANGELOG.md)
 

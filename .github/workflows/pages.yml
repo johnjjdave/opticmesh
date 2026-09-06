@@ -25,19 +25,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - name: Download stable web build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.6.4 --pattern opticmesh-web-0.6.4.zip --dir .pages
 
-      - name: Enable pnpm
-        run: corepack enable
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build website
-        run: pnpm exec vite build --config desktop/vite.config.ts
+      - name: Extract stable web build
+        run: |
+          mkdir -p desktop/dist
+          unzip -q .pages/opticmesh-web-0.6.4.zip -d desktop/dist
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
