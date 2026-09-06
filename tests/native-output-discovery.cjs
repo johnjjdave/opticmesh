@@ -22,7 +22,7 @@ function frame(width = 64, height = 32) {
 }
 
 async function verifyDiscovery(kind) {
-  const name = `OpticMesh ${kind.toUpperCase()} Discovery Test`;
+  const name = `LO2S - OpticMesh ${kind.toUpperCase()} Discovery Test`;
   const child = spawn(bridge, ["--send", kind, "--name", name], { windowsHide: true });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });

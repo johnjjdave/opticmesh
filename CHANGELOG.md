@@ -1,79 +1,83 @@
 # Changelog
 
-All notable user-facing changes across the complete product lineage are documented here, beginning with **LO2S Pattern Lab v0.0.0** and continuing through **OpticMesh** to the current **LO2S - OpticMesh** application.
+Features, improvements, fixes, and compatibility notes for LO2S - OpticMesh. Version 0.7.0 is a Beta release.
 
-The changelog uses one continuous pre-production `0.x` sequence. Development moved from `0.0.1` directly to the `0.2.0 Beta` 3D workspace; there was no published `0.1.0` release. On 2026-09-06, the product owner set the next intended stable target to `0.8.0`, with development remaining on `0.7.0-beta` until release execution. Historical entries retain the decisions applicable at their release dates.
+## [0.7.0 Beta] - 2026-09-06
 
-## [0.7.0 Beta — interface migration in progress] - Unreleased
+### New features
 
-- Rebuilt 3D All Views with independently retained cameras and pane-local navigation/gizmos. Perspective supports orbit; Top, Front, and Right use fixed-axis orthographic projection with pan and cursor-anchored zoom. Move/Rotate/Scale share one scene and update every pane in real time, with existing selection, preview, and undo/redo. Single/split switching preserves framing; Fit Scene reframes all cameras and Focus targets the last-used pane. Corrected high-DPI viewport sizing and excluded editor gizmos from 3D output.
-- Corrected the prototype numeric-field wrapper name collision from the preceding wheel-handling change.
-- Fixed numeric wheel adjustments also scrolling their inspector. Shared native wheel handling now keeps the active numeric field's panel stationary until focus leaves the field, preserves existing value-editing behavior, and releases the lock on blur or unmount. Applied it to transform, expression, precise-number, curvature, and prototype numeric controls; other panels and the viewport remain independently usable.
-- Aligned the Exact Transform inspector with consistent spacing between Position, Rotation, and Scale groups and the reset action. Simplified those titles by removing “world metres”, “unlimited degrees”, and “multiplier”; position and rotation units remain beside the numeric values.
-- Recorded the revised `0.8.0` stable-release target while retaining `0.7.0-beta` development metadata until release execution.
-- Established a standing documentation rule: update the changelog alongside implementation, record future-feature discussions and agreed tasks in the roadmap/backlog, and maintain new application rules in `PROJECT.md` during the same working session.
-- Added double-click reset to all sliders in Patterns, Pixel Map, 3D, and retained legacy/prototype layouts. Double-clicking the thumb or track restores the setting's built-in default through its normal update path, preserving selection scope and existing 3D undo/redo without adding reset buttons to the redesigned layout. A shared slider component and lint rule require the same behavior for future sliders.
-- Created an isolated `/v070` implementation route so the redesigned interface can be connected and reviewed one complete workflow at a time without replacing the trusted `0.6.4 Beta` application.
-- Connected the redesigned Patterns workspace to the production calculator, canvas renderer, overlays, logo controls, project actions, native-resolution export, Fit/Actual 1:1 modes, and Studio/Focused layout behaviour.
-- Connected the redesigned Pixel Map workspace to the production Resolume XML parser, desktop link/watch actions, input/output views, screen selection, canvas slice selection, multi-selection, and per-slice overrides.
-- Added the complete Pixel Map pattern-fill set and Per Slice/Across Map modes to the new Tools panel.
-- Added separated Source, Geometry, Information, Appearance, and Export inspector tabs so Pixel Map parameters remain organised without one long scrolling inspector.
-- Preserved arithmetic numeric entry, aligned steppers, arbitrary positive pitch entry, pitch presets, shared/mixed selection values, and bulk updates for selected slices.
-- Connected XML validation rows to exact diagnostic details and affected-slice selection, with a bounded scrollable validation region.
-- Connected transparent/black map backgrounds, NDI/Spout pattern output selection, selected-slice export, and all-output-map export.
-- Restored the complete Pixel Map Deco toolset inside Appearance: cabinet palette colours, cross/circle/safe-area colours, line width with precise entry, grid/border colour, centre-dot colour and size, and global/selected override actions.
-- Added the agreed minimize/expand control to the Validation, Output, and Performance panel so collapsing it returns the space to the viewport.
-- Removed the duplicate Transparent/Black control from the Pixel Map viewport toolbar; background mode now appears only in Appearance.
-- Corrected the five-column Pixel Map inspector tab grid so Source, Geometry, Info, Style, and Export use equal centred widths with clearly separated titles and a stable active underline.
-- Renamed the Pixel Map `Appearance` tab to the shorter `Style` label so it fits comfortably while continuing to contain the same appearance and decoration controls.
-- Renamed the Patterns `Overlays` tab to `Style` as well, giving equivalent visual controls the same name in both workspaces.
-- Restored the complete Patterns Style controls from the trusted interface: cabinet checker colours and calculated block size, label/cross/circle/safe-area colours, precise line width, grid/border colour, and centre-marker colour and size.
-- Separated Patterns Style from Pixel Map Style in project state and rendering, preventing colours, guides, checker settings, line widths, and centre-marker settings in one workspace from modifying the other.
-- Persisted the independent Patterns Style block in `.lo2s` projects and deterministically migrates older projects by copying their previous shared appearance into the new Pattern-specific block once.
-- Fixed the Patterns centre dot by adding a dedicated overlay render pass that works across Metric Grid, Cabinet IDs, Color Bars, Grayscale, and Pixel Check.
-- Added the first functional immersive Pattern formats to `/v070`: **Dome**, **Cubemap**, **Equirectangular**, and **Cylindrical**, while retaining Planar as the existing rectangular workflow.
-- Rebuilt Dome as an independent projection workflow rather than treating it as an LED or Planar variation.
-- Added a dedicated square Dome resolution field with 1K, 2K, 4K, 6K, and 8K presets, independent pattern name and size, native square export readout, and project persistence.
-- Added Dome-only backgrounds: Black, black–white gradient, spectrum gradient, UV map, transparent, and custom colour.
-- Added Dome-only compass, line opacity, degree-step presets, degree labels, elevation angles, border, ring count, ring weight, guide colours, safe area, centre marker, and reset controls.
-- Removed LED cabinet geometry and pixel-pitch calculation from Dome Setup; Cabinet Checker and Cabinet IDs are unavailable in Dome and cannot enter its renderer.
-- Isolated Dome Style state from Planar and Pixel Map Style so changing Dome colours or guides cannot modify either LED workflow.
-- Replaced flat Dome title and resolution overlays with glyph-by-glyph constant-angle arc mapping so their raw fisheye geometry follows the dome surface.
-- Corrected Dome arc traversal so curved titles, resolution text, and angular labels read left-to-right instead of appearing mirrored.
-- Replaced the Planar nine-position logo placement in Dome with spherical-patch warping and independent azimuth, elevation, scale, visibility, and opacity controls.
-- Replaced strip-based spherical logo drawing with inverse polar pixel mapping, fixing mirrored logos and removing the visible line/seam artefacts created between rotated strips.
-- Decoupled active Dome interaction from its settled preview: controls redraw a lightweight working raster while moving, then the canvas automatically returns to the selected native 4K/6K/8K resolution after 180 ms; Actual 1:1 and PNG export remain native throughout.
-- Bounded and cached only the internal warped-logo texture so very large uploaded logos cannot stall the interface while every grid, ring, guide, and label retains native-resolution rendering.
-- Simplified Dome logo sizing to one 25–200% control; removed the conflicting Angular Width field and retained a fixed projection-safe base angle internally.
-- Realigned Azimuth and Elevation fields to the shared OpticMesh numeric layout so units precede the far-right stepper arrows, and removed the redundant spherical-warp note.
-- Changed Pattern PNG filenames to `OpticMesh - Project Title - Mode - Resolution.png`, using Planar, Dome, Cubemap, Equi, or Cyl according to projection format rather than the selected fill.
-- Corrected Domemaster label orientation so perimeter, compass, and elevation text face outward from the dome centre, including top labels that point toward the top edge.
-- Replaced N/E/S/W with projection-facing FRONT/BACK/LEFT/RIGHT references, corrected elevation ordering so low angles sit near the perimeter and high angles near the centre, and removed the central `ZENITH` word.
-- Removed fixed maximum font caps from Dome typography so elevation values, perimeter degrees, compass labels, title, and resolution retain the same readable proportions at 1K through 8K.
-- Increased elevation and perimeter-degree label weight and size, and capitalized the ring-weight choices to `Thin`, `Medium`, and `Bold`.
-- Added the missing spacing between Dome `Logo visible` and Azimuth so their borders and label no longer overlap.
-- Fixed shared arithmetic numeric entry to accept literal zero whenever a field's minimum permits it; Dome Azimuth now accepts `0°` directly while `360°` continues to normalize to the equivalent `0°`.
-- Removed duplicate 0°/90°/180°/270° perimeter labels whenever FRONT/BACK/LEFT/RIGHT compass labels are enabled, preventing cardinal text collisions while retaining the surrounding degree sequence.
-- Removed the Dome Pattern Size control and the `Native square 180° fisheye…` helper line; the dome now always occupies the maximum stroke-safe diameter of its selected square resolution.
-- Removed the redundant `180°` suffix from the rendered Dome resolution label; it now displays only the native square raster dimensions.
-- Implemented a square 180° Dome calibration pattern with circular crop, angular rings, radial spokes, outward orientation references, safe-area ring, reusable Style colours, logo, centre marker, and native square export sizing.
-- Implemented Cubemap calibration output with correctly identified ±X/±Y/±Z faces, per-face orientation references, guides, labels, and selectable **3 × 2** and **Horizontal Cross** layouts.
-- Implemented 2:1 Equirectangular and Cylindrical 360° outputs with angular grids, cardinal headings, horizon/pole or top/bottom references, explicit 0°/360° seams, guides, labels, and native-resolution export.
-- Separated projection format from Pattern Fill, allowing Metric Grid, Cabinet IDs, Color Bars, Grayscale, and Pixel Check to remain content choices while the selected projection format controls output geometry.
-- Persisted projection format and Cubemap layout in `.lo2s` projects and derived format-correct native output dimensions from the master raster width.
-- Renamed the generic pattern overlay tool from `LO2S Logo` to `Logo`; the control accepts any user-provided project logo and is not an LO2S-specific asset.
-- Consolidated the redesigned interface around one shared visual-token system for panel surfaces, section headings, control backgrounds, borders, typography sizes, hover states, active states, and control heights across both side panels and mode toolbars.
-- Kept the 3D workspace disabled in `/v070` until Patterns and Pixel Map receive explicit review; `/` remains the trusted `0.6.4 Beta` interface during this staged migration.
+- Redesigned the application around Patterns, Pixel Map, and 3D workspaces with searchable Tools, contextual inspectors, and Studio/Focused layouts.
+- Added an offline Guide and keyboard/mouse reference with clickable Contents and keyboard navigation.
+- Added All Views with Perspective, Top, Front, and Right panes. Each pane has independent pan and cursor-centred zoom; selecting and transforming objects updates every pane in real time.
+- Added 3D view shortcuts: F1 Perspective, F2 Top, F3 Right, F4 Front, and F5 All Views.
+- Added S for Focus Selection, F for Fit Scene, E/R/T for Move/Rotate/Scale, Ctrl+G for grouping, and viewport-scoped Ctrl+A for selecting all slices.
+- Added 1 m Move snapping for object, group, and shared selection pivots. Snapping works with the grid hidden and preserves spacing within a selection.
+- Added proportional scaling with Shift-drag in single view and All Views.
+- Added a Pivot editor with nine named anchors, custom XYZ coordinates, and a draggable XY pad. Pivot changes preserve visible placement and are included in project files, undo/redo, and scene exports.
+- Added File → Compile Project to create a named folder containing the project, imported Resolume XML, full-resolution input map, and every output map.
+- Added live viewport performance measurements: redraw FPS, CPU drawing times, render size, draw calls, triangles, resource counts, and GPU drawing time where supported.
+- Added Dome patterns with independent square resolution, angular guides, rings, compass and elevation labels, backgrounds, safe area, and spherical logo placement.
+- Added Cubemap patterns with independent face resolution, 3 × 2, Horizontal Cross, and Vertical Cross layouts, face labels, perspective guides, seam references, and directional logo placement.
 
-## [0.6.4] - 2026-08-31
+### Interface and workflow improvements
 
-- Published OpticMesh 0.6.4 as the sole supported stable GitHub release.
+- Unified typography, spacing, icons, selection states, numeric controls, and panel alignment across the application.
+- Added double-click reset to sliders throughout Patterns, Pixel Map, and 3D.
+- Kept a numeric field’s panel stationary during wheel editing; leaving the field restores panel scrolling.
+- Added larger Increase/Decrease controls while preserving arithmetic entry, wheel adjustment, and undo.
+- Renamed Exact Transform to Coordinates and placed Pivot, Align Centres, and Distribute Centres directly below it.
+- Connected the Tools Align and Distribute buttons to their corresponding inspector controls.
+- Moved Scene Display to the Scene inspector and added synchronized controls in the left Tools panel.
+- Added distinct icons for screen containers and editable slices/objects.
+- Improved top-menu browsing, keyboard access, and Export menu readability. Output status appears inside its menu and diagnostic panel.
+- Reserved project-bar space for notifications while keeping Studio/Focused controls and inspector borders aligned.
+- Improved narrow-window layouts and added a compact camera selector.
+- Displayed accurate manual-save, pending, saving, saved, and failure states.
+- Separated Patterns, Dome, and Pixel Map appearance settings so edits in one workspace do not change another.
+- Improved Dome label orientation, proportional typography, logo rendering, and responsiveness during editing.
+- Updated the built-in sample project and set new Planar projects to a 10 × 6 m example wall at 3.9 mm nominal pixel pitch.
+- Set center-dot size controls to 50–200 output pixels, with a 50 px default.
+- Consolidated Planar directional controls under Cardinal Labels and placed export commands in the top Export menu.
+
+### Bug fixes
+
+- Fixed All Views navigation and gizmos using the wrong pane bounds, including high-DPI displays.
+- Fixed Fit Scene omitting objects moved outside the original imported layout.
+- Prevented a viewport focus outline from appearing unexpectedly after mouse interaction or tool shortcuts.
+- Prevented Shift-dragging a scale gizmo from returning focus to a previously edited numeric field.
+- Disabled pivot editing when no unlocked slices are selected.
+- Fixed Pixel Map Info placement menus displaying stale values for multiple selected slices.
+- Fixed multi-selection checker-size readouts to show the common calculated value or Multiple values.
+- Corrected output dimensions for Resolume XML presets with nested virtual output devices.
+- Fixed project opening in the browser interface.
+- Fixed zero entry in supported arithmetic fields and overlapping Dome labels/controls.
+- Fixed the Patterns center marker across all pattern fills.
+- Prevented stale save completions from overwriting newer save status.
+
+### Compatibility notes
+
+- Windows x64 is the desktop platform. NDI and Spout require the Windows application; compatible NDI runtimes are detected by the installer.
+- Existing project settings are retained where supported. Older projects receive independent appearance settings; saved dot sizes outside 50–200 px are adjusted to the nearest limit.
+- Snap affects Move gizmos; numeric coordinates remain exact. F always fits the entire visible scene, while S focuses the selection.
+- Compile Project creates a new folder and leaves the working project’s save path unchanged. Its XML retains imported coordinates; 3D edits are stored in the project file. Live feeds are not included.
+- Project, recovery, and export locations remain under Documents\OpticMesh: Projects, Exports, and Test Patterns.
+
+### Known limitations
+
+- This release remains Beta. The 3D workspace is a layout and simulation tool, without a photoreal rendering engine or material editor.
+- Custom group-axis placement and mixed group-and-slice selection are unavailable.
+- GPU timing depends on hardware and driver support; system-wide GPU usage and VRAM usage are not reported.
+- High-resolution patterns, complex geometry, and live feeds can reduce responsiveness.
+- OBJ preserves final world geometry but does not retain editable pivot hierarchies. MVR 1.5 exports scene meshes, not lighting-fixture data.
+- The Windows installer is unsigned and may show an unknown-publisher warning.
+
+## [0.6.4] - 2026-09-06
+
+- Released the Windows installer with the matching browser application.
 - Published the matching 0.6.4 browser build at `opticmesh.lo2s.com` and enabled HTTPS for the new canonical hostname.
 - Added the official NDI 6 Runtime redistributable to the Windows installer prerequisite flow, removing the need to install the complete NDI Tools package before using OpticMesh NDI input or output.
 - Detects existing NDI 5/6 x64 runtimes through the official environment variables and standard installation locations, skipping prerequisite installation when a compatible runtime is already present.
 - Runs the vendor's visible NDI Runtime installer so its own licence terms remain user-visible; OpticMesh installation can still complete with a precise warning if the prerequisite is cancelled or fails.
-- Added a release-preparation script that downloads the runtime only from `https://ndi.link/NDIRedistV6`, verifies a pinned SHA-256, and stops the build if the upstream binary changes unexpectedly.
-- Added NDI trademark attribution and installer/runtime guidance to the README, software manual, native bridge documentation, and release workflow.
 - Packaged the prerequisite-enabled Windows installer as `LO2S-OpticMesh-0.6.4-beta-Setup.exe`.
 
 ## [0.6.3 Beta] - 2026-08-31
@@ -84,8 +88,7 @@ The changelog uses one continuous pre-production `0.x` sequence. Development mov
 - Removed the apparent ±90° group-rotation limit by preserving the continuous XYZ Euler representation nearest the existing group rotation.
 - Stopped Y rotations beyond ±90° from unexpectedly adding compensating X/Z values.
 - Added continuous per-drag rotation tracking so the gizmo retains values through multiple turns instead of wrapping after one revolution.
-- Added regression coverage for 120° and 450° group rotations and multi-group selection wiring.
-- Added the first complete `MANUAL.md` source for onboarding, production tutorials, projects and recovery, every current workspace, hierarchy/grouping, live sources, exports, shortcuts, troubleshooting, and future in-app Help integration.
+- Added the first complete `MANUAL.md` source for onboarding, production tutorials, projects and recovery, every current workspace, hierarchy/grouping, live sources, exports, shortcuts, troubleshooting, and Help.
 
 ## [0.6.2 Beta] - 2026-08-31
 
@@ -96,8 +99,6 @@ The changelog uses one continuous pre-production `0.x` sequence. Development mov
 - Preserved visible world placement whenever a slice or group changes parent by converting it into the new parent's local coordinate space.
 - Changed group renaming to start only on double-click while single-click remains selection and drag remains hierarchy organisation.
 - Advanced the `.lo2s` project format to schema 3; schema-1 and schema-2 groups migrate automatically with root-level parentage.
-- Added hierarchy-cycle protection and automated nested-transform, descendant-selection, migration, and drag-placement tests.
-- Packaged the Phase 3B test installer as `LO2S-OpticMesh-0.6.2-beta-Setup.exe`.
 
 ## [0.6.1 Beta] - 2026-08-31
 
@@ -117,11 +118,10 @@ The changelog uses one continuous pre-production `0.x` sequence. Development mov
 - Added Shift-based 5° interactive rotation snapping without changing exact numeric entry.
 - Added project schema 2 with automatic migration of schema-1 selection groups to real transform groups.
 - Preserved hierarchy nodes in GLB, glTF, and MVR exports while OBJ continues to bake the resulting world placement.
-- Added hierarchy transform round-trip, group-centre, ungrouping, and legacy-group migration tests.
 
 ## [0.5.0 Beta] - 2026-08-30
 
-- Completed the Phase 2 installed-project implementation with explicit managed-startup and named-project session identities.
+- Added separate startup-recovery and named-project save behavior.
 - Made `Ctrl+S` open Save As for the managed startup project and atomically overwrite an explicitly opened or saved named `.lo2s` file.
 - Kept background autosave isolated to `Documents\OpticMesh\Projects\Startup Project.lo2s`, so it never silently overwrites a named project.
 - Added New blank project, Open demo project, and Reveal Projects folder actions.
@@ -133,13 +133,12 @@ The changelog uses one continuous pre-production `0.x` sequence. Development mov
 
 ## [0.4.1 Beta] - 2026-08-30
 
-- Corrected the installed-app workflow so the executable is more than a repackaged portable build.
+- Improved the installed Windows project workflow.
 - Added the canonical `Documents\OpticMesh` workspace with `Projects`, `Exports`, and `Test Patterns` subfolders.
 - Added a managed startup project that autosaves the complete current working state and restores it automatically on the next launch.
 - Added a final synchronous save during window close and a recoverable previous autosave generation.
 - Made manual project Open and Save As dialogs start in `Documents\OpticMesh\Projects`.
 - Made 3D exports start in `Documents\OpticMesh\Exports` and test-pattern exports start in `Documents\OpticMesh\Test Patterns`.
-- Packaged the corrected test installer as `LO2S-OpticMesh-0.4.1-beta-Setup.exe`.
 
 ## [0.4.0 Beta] - 2026-08-30
 
@@ -151,27 +150,14 @@ The changelog uses one continuous pre-production `0.x` sequence. Development mov
 - Added adaptive mixed-pitch 3D placement based on each slice's effective pitch, accepting any valid positive manual value rather than limiting placement to named presets.
 - Added automatic central/most-prominent layout anchoring so the chosen reference screen remains at `X = 0` while surrounding slices adapt without new overlaps.
 - Replaced the legacy portable packaging target with an installable Windows executable that provides shortcuts and a standard uninstall entry.
-- Packaged the Phase 0–1 test installer as `LO2S-OpticMesh-0.4.0-beta-Setup.exe`.
 - Added Shift range selection and Ctrl/Cmd additive selection to the 3D scene hierarchy.
 - Made slice eye and lock actions apply to the full active multi-selection.
 - Removed the duplicate right-side History panel while preserving toolbar Undo/Redo and keyboard shortcuts.
 - Removed the redundant **Experimental WYSIWYG Workspace** label.
 
-## [0.3.4 Beta — LO2S - OpticMesh kickoff baseline] - 2026-08-26
-
-This was the internal product-transition milestone following `0.3.3 Beta`. No `0.3.4` installer was promoted as the active test build; the first packaged Phase 0–1 candidate followed as `0.4.0 Beta`.
-
-- Established the canonical product name **LO2S - OpticMesh**, keeping LO2S permanently visible as the designer and parent brand for the future family of free tools.
-- Continued the pre-production `0.x` version line so stable-version numbering remains reserved for demonstrated production readiness.
-- Retained the **Beta** badge throughout the `0.x` development cycle.
-- Preserved the complete former Git history and functional baseline while discontinuing the old releases as current download choices.
-- Created the comprehensive project foundation, phased roadmap, implementation backlog, production-readiness gates, and release discipline used by the ongoing rebuild.
-- Selected the professional 3D-workflow interface direction as the basis for the future LO2S-branded layout, while deferring the full visual redesign until the core workflow phases are stable.
-
 ## [0.3.3 Beta] - 2026-08-22
 
 - Fixed NDI and Spout senders stopping on generated pattern frames by making the Windows native frame pipe read RGBA data in binary mode.
-- Added regression coverage for Ctrl+Z, CR/LF, and arbitrary RGBA byte values using the same split header/pixel writes as the desktop application.
 
 ## [0.3.2 Beta] - 2026-08-22
 
@@ -339,7 +325,6 @@ This is the first public beta of the 3D Simulation workspace and the main public
 - Updated the Pattern Lab application icon, social preview artwork, package metadata, and Windows release configuration.
 - Corrected the Windows release dependency policy and kept automated build validation in the release workflow.
 
-This release became the stable comparison baseline for the later `0.2.0 Beta` 3D workspace.
 
 ## [0.0.0 — LO2S Pattern Lab] - 2026-07-31
 
@@ -369,7 +354,7 @@ The first published release established the original Pattern Lab application as 
 - Added selected-slice export and multi-screen output export.
 - Added local project save/load for Pattern Lab configuration, imported XML, logos, and slice overrides.
 - Added an offline portable Electron application that processed projects, XML files, logos, and exports locally.
-- Added the hosted browser build, desktop build integration, brand fonts and artwork, rendered-output tests, licensing, privacy notes, checksum guidance, and the initial Windows release workflow.
+- Added the hosted browser build, desktop build integration, brand fonts and artwork, licensing, privacy notes, checksum guidance, and the initial Windows release workflow.
 
 ### Initial release limitations
 
@@ -378,4 +363,3 @@ The first published release established the original Pattern Lab application as 
 - The product contained Test Patterns and Resolume Pixel Map only; the 3D Simulation workspace arrived in `0.2.0 Beta`.
 
 [0.6.4]: https://github.com/johnjjdave/opticmesh/releases/tag/v0.6.4
-

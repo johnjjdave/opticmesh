@@ -44,9 +44,22 @@ next-env.d.ts
 /work/
 /desktop/node_modules/
 /desktop/dist/
+/desktop/build/ndi-runtime/
 /desktop/release/
 /desktop/.electron-cache/
 /desktop/work/
 /desktop/src-tauri/
 /native/build/
 /native/addon/build/
+
+# Local planning, design studies, and generated release evidence
+/PROJECT.md
+/ROADMAP.md
+/TODO.md
+/design/
+/app/prototype/
+/.release-web-*/
+/desktop/release-*/
+
+# pnpm is the canonical dependency lockfile
+/package-lock.json

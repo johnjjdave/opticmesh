@@ -6,6 +6,6 @@ import "./desktop.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <Home />
+    <Home uiVersion="v070" />
   </React.StrictMode>,
 );

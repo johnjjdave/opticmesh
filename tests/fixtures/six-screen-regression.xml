@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XmlState name="LO2S - OpticMesh 3D Demo"><versionInfo majorVersion="7" minorVersion="22" microVersion="0"/><ScreenSetup><CurrentCompositionTextureSize width="3840" height="2160"/><screens>
+<Screen><Param name="Name" value="Main Stage"/><OutputDeviceVirtual width="3840" height="2160"/><layers>
+<Slice uniqueId="demo-left"><Param name="Name" value="Left Tower"/><InputRect><v x="160" y="340"/><v x="960" y="340"/><v x="960" y="1900"/><v x="160" y="1900"/></InputRect><OutputRect><v x="160" y="340"/><v x="960" y="340"/><v x="960" y="1900"/><v x="160" y="1900"/></OutputRect></Slice>
+<Slice uniqueId="demo-centre"><Param name="Name" value="Centre Wall"/><InputRect><v x="1040" y="580"/><v x="2800" y="580"/><v x="2800" y="1900"/><v x="1040" y="1900"/></InputRect><OutputRect><v x="1040" y="580"/><v x="2800" y="580"/><v x="2800" y="1900"/><v x="1040" y="1900"/></OutputRect></Slice>
+<Slice uniqueId="demo-right"><Param name="Name" value="Right Tower"/><InputRect><v x="2880" y="340"/><v x="3680" y="340"/><v x="3680" y="1900"/><v x="2880" y="1900"/></InputRect><OutputRect><v x="2880" y="340"/><v x="3680" y="340"/><v x="3680" y="1900"/><v x="2880" y="1900"/></OutputRect></Slice>
+</layers></Screen><Screen><Param name="Name" value="Header &amp; Floor"/><OutputDeviceVirtual width="3840" height="2160"/><layers>
+<Slice uniqueId="demo-header"><Param name="Name" value="Header Ribbon"/><InputRect><v x="1040" y="180"/><v x="2800" y="180"/><v x="2800" y="500"/><v x="1040" y="500"/></InputRect><OutputRect><v x="1040" y="180"/><v x="2800" y="180"/><v x="2800" y="500"/><v x="1040" y="500"/></OutputRect></Slice>
+<Slice uniqueId="demo-floor-left"><Param name="Name" value="Floor Left"/><InputRect><v x="1040" y="1940"/><v x="1880" y="1940"/><v x="1880" y="2100"/><v x="1040" y="2100"/></InputRect><OutputRect><v x="1040" y="1940"/><v x="1880" y="1940"/><v x="1880" y="2100"/><v x="1040" y="2100"/></OutputRect></Slice>
+<Slice uniqueId="demo-floor-right"><Param name="Name" value="Floor Right"/><InputRect><v x="1960" y="1940"/><v x="2800" y="1940"/><v x="2800" y="2100"/><v x="1960" y="2100"/></InputRect><OutputRect><v x="1960" y="1940"/><v x="2800" y="1940"/><v x="2800" y="2100"/><v x="1960" y="2100"/></OutputRect></Slice>
+</layers></Screen></screens></ScreenSetup></XmlState>

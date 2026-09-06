@@ -2,11 +2,11 @@ name: Deploy website
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -25,15 +25,31 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download stable web build
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate source
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm lint
+          pnpm exec vite build --config desktop/vite.config.ts
+
+      - name: Download published web application
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download v0.6.4 --pattern opticmesh-web-0.6.4.zip --dir .pages
-
-      - name: Extract stable web build
         run: |
-          mkdir -p desktop/dist
-          unzip -q .pages/opticmesh-web-0.6.4.zip -d desktop/dist
+          tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          asset=$(gh release view "$tag" --json assets --jq '.assets[].name | select(startswith("opticmesh-web-") and endswith(".zip"))')
+          test -n "$asset"
+          gh release download "$tag" --pattern "$asset" --pattern SHA256SUMS.txt --dir .pages
+          (cd .pages && sha256sum --check --ignore-missing SHA256SUMS.txt)
+          mkdir -p .pages/site
+          unzip -q ".pages/$asset" -d .pages/site
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
@@ -43,7 +59,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./desktop/dist
+          path: ./.pages/site
 
   deploy:
     if: github.event_name != 'pull_request'
