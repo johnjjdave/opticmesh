@@ -68,6 +68,7 @@ The changelog uses one continuous pre-production `0.x` sequence. Development mov
 ## [0.6.4] - 2026-08-31
 
 - Published OpticMesh 0.6.4 as the sole supported stable GitHub release.
+- Published the matching 0.6.4 browser build at `opticmesh.lo2s.com` and enabled HTTPS for the new canonical hostname.
 - Added the official NDI 6 Runtime redistributable to the Windows installer prerequisite flow, removing the need to install the complete NDI Tools package before using OpticMesh NDI input or output.
 - Detects existing NDI 5/6 x64 runtimes through the official environment variables and standard installation locations, skipping prerequisite installation when a compatible runtime is already present.
 - Runs the vendor's visible NDI Runtime installer so its own licence terms remain user-visible; OpticMesh installation can still complete with a precise warning if the prerequisite is cancelled or fails.
