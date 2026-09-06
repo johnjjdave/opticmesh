@@ -79,7 +79,7 @@ jobs:
           $installers = @(Get-ChildItem desktop/release/*-Setup.exe)
           if ($installers.Count -ne 1) { throw "Expected exactly one Windows installer" }
           Compress-Archive -Path desktop/dist/* -DestinationPath "desktop/release/opticmesh-web-$version.zip"
-          $files = @($installers[0], (Get-Item "desktop/release/opticmesh-web-$version.zip"))
+          $files = @($installers[0])
           $lines = $files | ForEach-Object { "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" }
           $lines | Set-Content -Encoding ascii desktop/release/SHA256SUMS.txt
 
@@ -89,8 +89,42 @@ jobs:
           name: OpticMesh-Windows
           path: |
             desktop/release/*-Setup.exe
-            desktop/release/opticmesh-web-*.zip
             desktop/release/SHA256SUMS.txt
+
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpticMesh-Web
+          path: desktop/release/opticmesh-web-*.zip
+
+      - name: Store release web application separately
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          $draft = gh release view $env:RELEASE_TAG --json isDraft --jq .isDraft
+          if ($LASTEXITCODE -ne 0 -or $draft -ne 'true') { throw "Web packages may only be stored for an existing draft release" }
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Unable to resolve release commit" }
+          git fetch --no-tags origin codex/web-assets
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch deployment storage" }
+          $storage = Join-Path $env:RUNNER_TEMP 'opticmesh-web-assets'
+          git worktree add --detach $storage FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Unable to open deployment storage" }
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          node scripts/web-release-storage.mjs store $storage $env:RELEASE_TAG $commit "desktop/release/opticmesh-web-$version.zip"
+          if ($LASTEXITCODE -ne 0) { throw "Web package storage verification failed" }
+          git -C $storage add -- "releases/$($env:RELEASE_TAG)"
+          if ($LASTEXITCODE -ne 0) { throw "Unable to stage web package" }
+          git -C $storage diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git -C $storage -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Store web application for $($env:RELEASE_TAG)"
+            if ($LASTEXITCODE -ne 0) { throw "Unable to commit web package" }
+            git -C $storage push origin HEAD:refs/heads/codex/web-assets
+            if ($LASTEXITCODE -ne 0) { throw "Unable to publish web package storage" }
+          } elseif ($LASTEXITCODE -ne 0) { throw "Unable to inspect storage changes" }
 
       - name: Attach files to draft release
         if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
@@ -101,5 +135,5 @@ jobs:
         run: |
           $draft = gh release view $env:RELEASE_TAG --json isDraft --jq .isDraft
           if ($LASTEXITCODE -ne 0 -or $draft -ne 'true') { throw "Assets may only be attached to an existing draft release" }
-          gh release upload $env:RELEASE_TAG desktop/release/*-Setup.exe desktop/release/opticmesh-web-*.zip desktop/release/SHA256SUMS.txt
+          gh release upload $env:RELEASE_TAG desktop/release/*-Setup.exe desktop/release/SHA256SUMS.txt
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }

@@ -32,10 +32,12 @@ The package must include original OpticMesh, font, Spout, and renderer dependenc
 
 1. Merge the reviewed pull request after required checks pass.
 2. Create the version tag from the merged commit and a draft GitHub release.
-3. Dispatch **Windows release** with the draft tag as `release_tag`. The workflow builds that exact tag, attaches the installer, web ZIP, and `SHA256SUMS.txt`, and refuses to replace an already published release.
+3. Dispatch **Windows release** with the draft tag as `release_tag`. The workflow builds that exact tag, stores the web ZIP and its verification manifest on the `codex/web-assets` deployment-storage branch, and attaches only the installer and its `SHA256SUMS.txt` to the public release. It refuses to replace an already published release.
 4. Download and verify the actual attached artifacts. Use the complete version section from CHANGELOG.md as release notes.
 5. Publish as GitHub **Latest** when this is the recommended public download, even if the app remains labelled Beta. Use prerelease status only for a secondary preview.
-6. Dispatch **Deploy website** on `main` after publication. The Pages environment permits deployments from `main`; release-tag events cannot deploy directly. The workflow downloads the latest published web ZIP and validates its checksums; source previews are never substituted for release artifacts.
+6. Dispatch **Deploy website** on `main` after publication. The Pages environment permits deployments from `main`; release-tag events cannot deploy directly. The workflow selects the Latest release, reads its ZIP from `codex/web-assets/releases/<tag>/`, and verifies the manifest's tag, source commit, filename, size, and SHA-256 before deployment. Source previews are never substituted for release artifacts.
+
+Web packages remain on the deployment-storage branch without CI artifact expiry. Keep that branch available for deployments and rollback. A retry reuses a verified archive for the same tag and source commit; corrupt archives or changed tag targets fail verification. The branch is public repository infrastructure, not private storage. The separate `OpticMesh-Web` Actions artifact is a temporary convenience copy, not the website's deployment dependency.
 
 ## Post-publication repository review
 

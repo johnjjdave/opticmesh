@@ -2,6 +2,12 @@
 
 Features, improvements, fixes, and compatibility notes for LO2S - OpticMesh. Version 0.7.0 is a Beta release.
 
+## Unreleased
+
+### Distribution
+
+- Moved web deployment packages out of public release downloads into separate versioned storage. Windows releases retain the installer and its checksum; the hosted application remains available at opticmesh.lo2s.com.
+
 ## [0.7.0 Beta] - 2026-09-06
 
 ### New features
