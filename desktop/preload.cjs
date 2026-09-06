@@ -102,7 +102,7 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
   getWorkspacePaths: () => ipcRenderer.invoke("workspace:paths"),
   revealProjectsFolder: () => ipcRenderer.invoke("workspace:reveal-projects"),
   startPatternOutput: (kind, name) => ipcRenderer.invoke("output:start", { kind, name }),
-  sendPatternOutputFrame: (width, height, data) => ipcRenderer.invoke("output:frame", { width, height, data }),
+  sendPatternOutputFrame: (width, height, data, fps) => ipcRenderer.invoke("output:frame", { width, height, data, fps }),
   stopPatternOutput: () => ipcRenderer.invoke("output:stop"),
   listNativeSources: (kind) => ipcRenderer.invoke("source:list", kind),
   connectNativeSource: (kind, sourceId, quality) => { stopSharedFrames(); return ipcRenderer.invoke("source:connect", { kind, sourceId, quality }); },

@@ -3,7 +3,7 @@
 **Application:** LO2S - OpticMesh  
 **Manual version:** 0.1  
 **Applies to:** LO2S - OpticMesh v0.7.0 Beta  
-**Last updated:** 2026-09-06  
+**Last updated:** 2026-09-07  
 **Status:** Living Beta documentation
 
 LO2S - OpticMesh is an LED test-pattern, Resolume pixel-map, and physically scaled 3D simulation application designed by LO2S. Use this manual to learn the workspaces, controls, shortcuts, and export workflows. Open it offline through **Help → OpticMesh Manual** or **Guide**; use **Help → Keyboard Shortcuts** for the control reference.
@@ -388,7 +388,11 @@ The Windows application can send the generated Resolume input-map pattern throug
 - **NDI**, or
 - **Spout**.
 
-Only one output protocol is active at a time. Selecting NDI stops Spout; selecting Spout stops NDI. Output uses the exact composition dimensions and preserves RGBA data.
+Only one output protocol is active at a time. Selecting NDI stops Spout; selecting Spout stops NDI. Pattern and Pixel Map output preserves its native raster dimensions and RGBA data.
+
+In **3D**, live output preserves the composition aspect ratio and limits its longest edge to **2048 pixels**, at up to **15 fps**. Smaller compositions are not enlarged. For example, a 7680 × 4320 composition streams at 2048 × 1152. The Output panel shows the stream dimensions. All Views output uses the Perspective camera; the four editing panes remain independently controllable.
+
+**Tip:** use the Output panel to check stream size. The 3D streaming limit does not change project dimensions, physical geometry, PNG maps, or compiled project exports. Actual streaming speed depends on scene complexity, hardware, and the receiver.
 
 This output workflow is separate from receiving NDI or Spout as a texture in the 3D Simulation workspace.
 

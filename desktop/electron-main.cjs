@@ -519,7 +519,8 @@ app.whenReady().then(async () => {
     const data = Buffer.from(payload?.data || []);
     const expected = width * height * 4;
     if (expected !== data.length || expected > 512 * 1024 * 1024) return { ok: false, error: "The output frame dimensions are invalid." };
-    nativeOutputLatest = { width, height, fpsN: 30, fpsD: 1, data };
+    const fpsN = Math.max(1, Math.min(30, Math.round(Number(payload?.fps) || 30)));
+    nativeOutputLatest = { width, height, fpsN, fpsD: 1, data };
     flushNativeOutput();
     return { ok: true };
   });

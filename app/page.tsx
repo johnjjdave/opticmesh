@@ -21,6 +21,10 @@ import { cubemapAtlasDimensions, cubemapFacePlacements, cubemapFaceUvToDirection
 import packageMetadata from "../package.json";
 import v070 from "./v070/v070.module.css";
 import DEMO_RESOLUME_XML from "../public/examples/LO2S - OpticMesh - Demo.xml?raw";
+import LO2S_LOGO_SVG from "../public/brand/lo2s-logo-white.svg?raw";
+import { simulationOutputSize, SIMULATION_OUTPUT_FPS } from "./live-output";
+
+const LO2S_LOGO_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(LO2S_LOGO_SVG)}`;
 
 const CENTER_DOT_SIZE = { min: 50, max: 200, default: 50 } as const;
 const normalizeCenterDotSize = (value: unknown) => typeof value === "number" && Number.isFinite(value)
@@ -331,7 +335,7 @@ type DesktopBridge = {
     error?: string;
   }>;
   startPatternOutput: (kind: "ndi" | "spout", name: string) => Promise<{ ok: boolean; error?: string }>;
-  sendPatternOutputFrame: (width: number, height: number, data: ArrayBuffer) => Promise<{ ok: boolean; error?: string }>;
+  sendPatternOutputFrame: (width: number, height: number, data: ArrayBuffer, fps?: number) => Promise<{ ok: boolean; error?: string }>;
   stopPatternOutput: () => Promise<{ ok: boolean }>;
   onPatternOutputStatus: (callback: (status: NativeSourceStatus) => void) => () => void;
   listNativeSources: (kind: "ndi" | "spout") => Promise<{ ok: boolean; sources?: NativeSourceInfo[]; error?: string }>;
@@ -2301,6 +2305,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     patternOutputTimerRef = useRef<number | null>(null),
     simulationOutputCaptureRef = useRef<SimulationOutputCapture | null>(null),
     patternOutputBusyRef = useRef(false),
+    patternOutputSessionRef = useRef(0),
     zoomRef = useRef(1),
     panRef = useRef({ x: 0, y: 0 }),
     selectionDragRef = useRef<{
@@ -3414,6 +3419,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!desktop?.sendPatternOutputFrame || patternOutput === "off" || !patternOutputReadyRef.current || patternOutputBusyRef.current) return;
     patternOutputBusyRef.current = true;
+    const session = patternOutputSessionRef.current;
     try {
       if (workspaceMode === "simulation") {
         if (!resolumeMap || !allSlices.length) {
@@ -3422,9 +3428,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         }
         const capture = simulationOutputCaptureRef.current;
         if (!capture) return;
-        const frame = await capture(resolumeMap.compositionWidth, resolumeMap.compositionHeight);
-        const result = await desktop.sendPatternOutputFrame(frame.width, frame.height, frame.data);
-        if (!result.ok && result.error !== "Output is not running.") setPatternOutputStatus(result.error || "Unable to update 3D Output");
+        const size = simulationOutputSize(resolumeMap.compositionWidth, resolumeMap.compositionHeight);
+        const frame = await capture(size.width, size.height);
+        if (session !== patternOutputSessionRef.current) return;
+        const result = await desktop.sendPatternOutputFrame(frame.width, frame.height, frame.data, SIMULATION_OUTPUT_FPS);
+        if (session === patternOutputSessionRef.current && !result.ok && result.error !== "Output is not running.") setPatternOutputStatus(result.error || "Unable to update 3D Output");
         return;
       }
     if (workspaceMode === "resolume" && !resolumeMap) {
@@ -3442,11 +3450,16 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     const result = await desktop.sendPatternOutputFrame(canvas.width, canvas.height, image.data.buffer as ArrayBuffer);
     if (!result.ok && result.error !== "Output is not running.") setPatternOutputStatus(result.error || "Unable to update the live output");
     } catch (error) {
-      setPatternOutputStatus(error instanceof Error ? error.message : "Unable to render Output");
+      if (session === patternOutputSessionRef.current) setPatternOutputStatus(error instanceof Error ? error.message : "Unable to render Output");
     } finally {
       patternOutputBusyRef.current = false;
+      if (session !== patternOutputSessionRef.current && patternOutputReadyRef.current) void patternOutputPushRef.current();
     }
   }, [activeScreen, allSlices.length, mapView, patternOutput, renderToCanvas, resolumeMap, workspaceMode]);
+  useEffect(() => {
+    patternOutputSessionRef.current += 1;
+    return () => { patternOutputSessionRef.current += 1; };
+  }, [workspaceMode, patternOutput]);
   useEffect(() => {
     patternOutputPushRef.current = pushPatternOutputFrame;
   }, [pushPatternOutputFrame]);
@@ -3501,7 +3514,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     let cancelled = false, timer = 0;
     const pump = async () => {
       await patternOutputPushRef.current();
-      if (!cancelled) timer = window.setTimeout(pump, 1000 / 15);
+      if (!cancelled) timer = window.setTimeout(pump, 1000 / SIMULATION_OUTPUT_FPS);
     };
     timer = window.setTimeout(pump, 0);
     return () => {
@@ -3525,6 +3538,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   useEffect(
     () => () => {
       const desktop = (window as PickerWindow).lo2sDesktop;
+      patternOutputReadyRef.current = false;
       void desktop?.stopPatternOutput?.();
     },
     [],
@@ -5095,7 +5109,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     return <TransformSelectionScope.Provider value={isV0703D ? "v070-3d" : "v070-patterns"}>
       <main className={`${v070.app} ${v070Focused ? v070.focused : ""}`} onClick={() => v070Menu && setV070Menu(null)}>
         <header className={v070.header}>
-          <div className={v070.brand}><img src="/brand/lo2s-logo-white.svg" alt="LO2S" /><i /><strong>OpticMesh</strong><span>v0.7.0</span><b>Beta</b></div>
+          <div className={v070.brand}><img src={LO2S_LOGO_URL} alt="LO2S" /><i /><strong>OpticMesh</strong><span>v0.7.0</span><b>Beta</b></div>
           <nav className={v070.menus}>{["File", "Export", "Output", "Tools", "Help", "About"].map((item) => <div key={item}
             onPointerEnter={(event) => { if (event.pointerType !== "touch") setV070Menu((current) => current === null ? null : item); }}
             onBlur={(event) => { if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) setV070Menu(null); }}
@@ -5161,7 +5175,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
               {v070DiagnosticsOpen && <section>
                 {v070DiagnosticTab === "validation" && (isV070Map ? <div className={v070.validationRows}>{resolumeMap ? validations.map((item, index) => <button key={`${item.text}-${index}`} className={v070[item.level]} title={item.details} data-tooltip={item.details} onClick={() => { const affected = allSlices.filter((slice) => item.details.includes(`${slice.screenName} / ${slice.name}`)).map((slice) => slice.id); if (affected.length) { setSelectedSliceIds(affected); setV070InspectorTab("geometry"); } }}><i /><span><b>{item.text}</b><small>{item.details}</small></span>{item.level === "warn" && <em>Focus</em>}</button>) : <p>Choose or link a Resolume Advanced Output XML to begin.</p>}</div> : isV0703D ? <><span>{invalidCurvedDepthSlices.length ? `${invalidCurvedDepthSlices.length} curved screen${invalidCurvedDepthSlices.length === 1 ? "" : "s"} exceed the safe extrusion radius.` : allSlices.length ? "Scene geometry is valid for editing and export." : "Choose a Resolume XML map to build the 3D scene."}</span><strong>{allSlices.length} screens</strong></> : <><span>{stats.mismatch ? "Pixel pitch differs between axes." : stats.cabinetRemainder ? "Wall dimensions do not resolve to complete cabinets." : "Pattern geometry and raster relationship are ready."}</span><strong>{outputWidth} × {outputHeight} px</strong></>)}
                 {v070DiagnosticTab === "changes" && isV070Map && (pendingXmlUpdate ? <><span>{pendingXmlUpdate.name} · {pendingMapChanges.added} added · {pendingMapChanges.removed} removed · {pendingMapChanges.changed} changed</span><div className={v070.diagnosticActions}><button onClick={() => { const update = pendingXmlUpdate; applyXmlText(update.xml, update.name, { linked: true, path: update.path, mtimeMs: update.mtimeMs }); setV070DiagnosticTab("validation"); }}>Apply update</button><button onClick={() => { setPendingXmlUpdate(null); setV070DiagnosticTab("validation"); setNotice("Kept the current map"); }}>Keep current</button></div></> : <><span>The linked map matches the current project.</span><strong>No pending changes</strong></>)}
-                {v070DiagnosticTab === "output" && <><span>{patternOutputStatus}</span><strong>{patternOutput === "off" ? "Streaming disabled" : `${outputWidth} × ${outputHeight} px`}</strong></>}
+                {v070DiagnosticTab === "output" && <><span>{patternOutputStatus}</span><strong>{patternOutput === "off" ? "Streaming disabled" : isV0703D ? `${simulationOutputSize(outputWidth, outputHeight).width} × ${simulationOutputSize(outputWidth, outputHeight).height} px · max ${SIMULATION_OUTPUT_FPS} fps` : `${outputWidth} × ${outputHeight} px`}</strong></>}
                 {v070DiagnosticTab === "performance" && <PerformancePanel key={workspaceMode} metrics={renderMetrics[workspaceMode]} three={isV0703D} />}
               </section>}
             </div>

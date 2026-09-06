@@ -2,6 +2,14 @@
 
 Features, improvements, fixes, and compatibility notes for LO2S - OpticMesh. Version 0.7.0 is a Beta release.
 
+## Unreleased
+
+### Fixes
+
+- Fixed the LO2S toolbar logo in the Windows application by bundling the artwork with the interface.
+- Limited 3D NDI/Spout output to 2048 pixels on its longest edge, preserving composition aspect ratio without enlarging smaller compositions. The Output panel shows the capped dimensions.
+- Replaced blocking 3D output readback with asynchronous GPU capture, preserved viewport state during capture, and prevented overlapping captures and stale frames after workspace/protocol changes. 3D output runs at up to 15 fps; pattern/map exports retain native resolution.
+
 ## [0.7.0 Beta] - 2026-09-06
 
 ### New features

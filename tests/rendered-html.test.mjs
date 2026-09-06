@@ -51,7 +51,7 @@ test("keeps the connected 0.7 Pixel Map milestone wired to production logic", as
   assert.match(page, /setPatternOutput\("spout"\)/);
   assert.doesNotMatch(page, /Live test pattern/);
   assert.match(page, /LO2S - OpticMesh Output/);
-  assert.match(page, /1000 \/ 15/);
+  assert.match(page, /1000 \/ SIMULATION_OUTPUT_FPS/);
   assert.match(page, /onOutputCaptureReady/);
   assert.match(page, /arrangeSimulationSelection/);
   assert.match(page, /10_000/);

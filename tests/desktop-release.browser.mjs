@@ -13,6 +13,10 @@ const app = await _electron.launch({ executablePath });
 try {
   const page = await app.firstWindow();
   await page.getByRole('button', { name: 'Guide', exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const image = document.querySelector('img[alt="LO2S"]');
+    return image?.complete && image.naturalWidth > 0;
+  });
   await page.waitForFunction(() => !!window.lo2sDesktop);
   assert.equal(await app.evaluate(({ app }) => app.getVersion()), '0.7.0-beta');
   const documents = await app.evaluate(({ app }) => app.getPath('documents'));

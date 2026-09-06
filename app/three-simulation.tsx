@@ -7,6 +7,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createViewportControls } from "./viewport-controls";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { createGpuTimer, RenderPerformance } from "./render-performance";
+import { simulationOutputSize } from "./live-output";
 
 type Point = { x: number; y: number };
 type Rect = { x: number; y: number; width: number; height: number; points: Point[] };
@@ -625,37 +626,56 @@ export default function ThreeSimulation(props: Props) {
 
     let outputTarget: THREE.WebGLRenderTarget | null = null;
     let outputPixels = new Uint8Array(0);
+    let capturePending = false, disposed = false;
+    const disposeOutputRenderer = () => { outputTarget?.dispose(); renderer.dispose(); };
     const captureOutput: SimulationOutputCapture = async (requestedWidth, requestedHeight) => {
-      const width = Math.max(1, Math.round(requestedWidth)), height = Math.max(1, Math.round(requestedHeight));
-      const maximumTextureSize = renderer.capabilities.maxTextureSize;
-      if (width > maximumTextureSize || height > maximumTextureSize) throw new Error(`3D Output ${width} × ${height} exceeds this GPU's ${maximumTextureSize}px render-target limit.`);
-      if (!outputTarget || outputTarget.width !== width || outputTarget.height !== height) {
-        outputTarget?.dispose();
-        outputTarget = new THREE.WebGLRenderTarget(width, height, { depthBuffer: true, stencilBuffer: false });
-        outputTarget.texture.colorSpace = THREE.SRGBColorSpace;
-        outputPixels = new Uint8Array(width * height * 4);
-      }
-      const previousTarget = renderer.getRenderTarget();
-      const outputCamera = (latestRef.current.viewMode === "four" ? camera : views.find((view) => view.name === latestRef.current.viewMode)!.camera).clone();
-      if (outputCamera instanceof THREE.PerspectiveCamera) outputCamera.aspect = width / height;
-      else { outputCamera.left = -outputCamera.top * width / height; outputCamera.right = outputCamera.top * width / height; }
-      outputCamera.updateProjectionMatrix();
-      views.forEach((view) => { view.transform.getHelper().visible = false; });
+      if (disposed || renderer.getContext().isContextLost()) throw new Error("3D Output is unavailable while the viewport is closed or its graphics context is lost.");
+      if (capturePending) throw new Error("A 3D Output frame is already being captured.");
+      capturePending = true;
       try {
-        renderer.setRenderTarget(outputTarget); renderer.setScissorTest(false); renderer.render(scene, outputCamera);
-        renderer.readRenderTargetPixels(outputTarget, 0, 0, width, height, outputPixels);
+        const { width, height } = simulationOutputSize(requestedWidth, requestedHeight, renderer.capabilities.maxTextureSize);
+        if (!outputTarget || outputTarget.width !== width || outputTarget.height !== height) {
+          outputTarget?.dispose();
+          outputTarget = new THREE.WebGLRenderTarget(width, height, { depthBuffer: true, stencilBuffer: false });
+          outputTarget.texture.colorSpace = THREE.SRGBColorSpace;
+          outputPixels = new Uint8Array(width * height * 4);
+        }
+        const previousTarget = renderer.getRenderTarget();
+        const previousViewport = renderer.getViewport(new THREE.Vector4());
+        const previousScissor = renderer.getScissor(new THREE.Vector4());
+        const previousScissorTest = renderer.getScissorTest();
+        const helperVisibility = views.map((view) => view.transform.getHelper().visible);
+        const outputCamera = (latestRef.current.viewMode === "four" ? camera : views.find((view) => view.name === latestRef.current.viewMode)!.camera).clone();
+        if (outputCamera instanceof THREE.PerspectiveCamera) outputCamera.aspect = width / height;
+        else { outputCamera.left = -outputCamera.top * width / height; outputCamera.right = outputCamera.top * width / height; }
+        outputCamera.updateProjectionMatrix();
+        views.forEach((view) => { view.transform.getHelper().visible = false; });
+        let readback: Promise<unknown>;
+        try {
+          renderer.setRenderTarget(outputTarget); renderer.setScissorTest(false); renderer.render(scene, outputCamera);
+          readback = renderer.readRenderTargetPixelsAsync(outputTarget, 0, 0, width, height, outputPixels);
+        } finally {
+          // Restore immediately, before yielding to GPU readback, so navigation can render safely.
+          renderer.setRenderTarget(previousTarget);
+          renderer.setViewport(previousViewport);
+          renderer.setScissor(previousScissor);
+          renderer.setScissorTest(previousScissorTest);
+          views.forEach((view, index) => { view.transform.getHelper().visible = helperVisibility[index]; });
+        }
+        await readback;
+        if (disposed) throw new Error("3D Output stopped because the viewport was closed.");
+        const flipped = new Uint8Array(outputPixels.length), stride = width * 4;
+        for (let row = 0; row < height; row += 1) flipped.set(outputPixels.subarray((height - row - 1) * stride, (height - row) * stride), row * stride);
+        return { width, height, data: flipped.buffer };
       } finally {
-        renderer.setRenderTarget(previousTarget);
-        views.forEach((view) => { view.transform.getHelper().visible = !!view.transform.object; });
-        dirty = true;
+        capturePending = false;
+        if (disposed) disposeOutputRenderer();
       }
-      const flipped = new Uint8Array(outputPixels.length), stride = width * 4;
-      for (let row = 0; row < height; row += 1) flipped.set(outputPixels.subarray((height - row - 1) * stride, (height - row) * stride), row * stride);
-      return { width, height, data: flipped.buffer };
     };
     props.onOutputCaptureReady?.(captureOutput);
     runtimeRef.current = { fit, focusSelection, setView, render: renderScene, updateClipping: updateCameraClipping, controls, camera, renderer, transforms: views.map((view) => view.transform), proxy, meshes, patternTextures, scene, grid, floor, externalTextures: {} };
     return () => {
+      disposed = true;
       cancelAnimationFrame(frame);
       gpuTimer.dispose();
       renderer.domElement.removeEventListener("webglcontextrestored", restoreGpuTimer);
@@ -682,9 +702,8 @@ export default function ThreeSimulation(props: Props) {
       host.removeEventListener("pointerdown", onPointerDown, true);
       host.removeEventListener("pointermove", onPointerMove, true);
       host.removeEventListener("pointerup", onPointerUp, true);
-      renderer.dispose();
       renderer.domElement.remove();
-      outputTarget?.dispose();
+      if (!capturePending) disposeOutputRenderer();
       props.onOutputCaptureReady?.(null);
       runtimeRef.current = null;
     };
