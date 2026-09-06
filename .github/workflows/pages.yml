@@ -36,18 +36,24 @@ jobs:
           pnpm lint
           pnpm exec vite build --config desktop/vite.config.ts
 
-      - name: Download published web application
+      - name: Check out deployment storage
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: codex/web-assets
+          path: .web-assets
+          persist-credentials: false
+
+      - name: Verify and unpack published web application
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-          asset=$(gh release view "$tag" --json assets --jq '.assets[].name | select(startswith("opticmesh-web-") and endswith(".zip"))')
-          test -n "$asset"
-          gh release download "$tag" --pattern "$asset" --pattern SHA256SUMS.txt --dir .pages
-          (cd .pages && sha256sum --check --ignore-missing SHA256SUMS.txt)
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+          node scripts/web-release-storage.mjs verify .web-assets "$tag" "$commit"
           mkdir -p .pages/site
-          unzip -q ".pages/$asset" -d .pages/site
+          unzip -q ".web-assets/releases/$tag/opticmesh-web-${tag#v}.zip" -d .pages/site
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
