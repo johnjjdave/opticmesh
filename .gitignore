@@ -59,6 +59,7 @@ next-env.d.ts
 /design/
 /app/prototype/
 /.release-web-*/
+/.web-assets/
 /desktop/release-*/
 
 # pnpm is the canonical dependency lockfile
