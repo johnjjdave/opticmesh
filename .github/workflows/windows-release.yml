@@ -52,7 +52,7 @@ jobs:
 
       - name: Package Windows installer
         working-directory: desktop
-        run: pnpm build
+        run: pnpm build --publish never
 
       - name: Install and launch-check Windows application
         shell: pwsh
