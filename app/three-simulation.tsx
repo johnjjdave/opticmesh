@@ -20,7 +20,7 @@ export type SimulationView = "perspective" | "top" | "right" | "front" | "four";
 export type { SlicePivot } from "./slice-pivot";
 export type SliceCurvature = { horizontal: number; vertical: number };
 export type SimulationOutputFrame = { width: number; height: number; data: ArrayBuffer };
-export type SimulationOutputCapture = (width: number, height: number) => Promise<SimulationOutputFrame>;
+export type SimulationOutputCapture = () => Promise<SimulationOutputFrame>;
 
 type Props = {
   snapEnabled?: boolean;
@@ -628,12 +628,12 @@ export default function ThreeSimulation(props: Props) {
     let outputPixels = new Uint8Array(0);
     let capturePending = false, disposed = false;
     const disposeOutputRenderer = () => { outputTarget?.dispose(); renderer.dispose(); };
-    const captureOutput: SimulationOutputCapture = async (requestedWidth, requestedHeight) => {
+    const captureOutput: SimulationOutputCapture = async () => {
       if (disposed || renderer.getContext().isContextLost()) throw new Error("3D Output is unavailable while the viewport is closed or its graphics context is lost.");
       if (capturePending) throw new Error("A 3D Output frame is already being captured.");
       capturePending = true;
       try {
-        const { width, height } = simulationOutputSize(requestedWidth, requestedHeight, renderer.capabilities.maxTextureSize);
+        const { width, height } = simulationOutputSize(renderer.capabilities.maxTextureSize);
         if (!outputTarget || outputTarget.width !== width || outputTarget.height !== height) {
           outputTarget?.dispose();
           outputTarget = new THREE.WebGLRenderTarget(width, height, { depthBuffer: true, stencilBuffer: false });

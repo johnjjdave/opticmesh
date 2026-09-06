@@ -56,8 +56,8 @@ try {
     await output.click();
     await page.getByRole('button', { name: kind === 'ndi' ? 'NDI' : 'Spout', exact: true }).click();
     await page.getByRole('button', { name: `Output ${kind.toUpperCase()}`, exact: true }).click();
-    await page.waitForFunction(() => document.body.innerText.includes('2048 × 1409') && document.body.innerText.includes('15 fps · RGBA'), null, { timeout: 20000 });
-    console.log(`${kind} connected at capped dimensions`);
+    await page.waitForFunction(() => document.body.innerText.includes('1920 × 1080') && document.body.innerText.includes('3 fps · RGBA'), null, { timeout: 20000 });
+    console.log(`${kind} connected at configured dimensions`);
     await viewport.focus();
     await page.keyboard.press('F5');
     assert.equal(await page.getByRole('combobox', { name: 'Camera view', exact: true }).inputValue(), 'four');
@@ -71,7 +71,7 @@ try {
     const frames = await app.evaluate(() => global.outputProbe.frames);
     const stream = frames.filter(frame => frame.kind === kind);
     assert(stream.length >= 3, `${kind} continues producing frames (${stream.length})`);
-    for (const frame of stream) assert.deepEqual([frame.width, frame.height, frame.fps, frame.bytes], [2048, 1409, 15, 2048 * 1409 * 4]);
+    for (const frame of stream) assert.deepEqual([frame.width, frame.height, frame.fps, frame.bytes], [1920, 1080, 3, 1920 * 1080 * 4]);
     await output.click(); await page.getByRole('button', { name: 'OFF', exact: true }).click();
   }
   // Stop/unmount during a queued capture must not leak a stale frame or a graphics error.
@@ -83,7 +83,7 @@ try {
   assert(probe.asyncReads >= 6);
   assert.equal(probe.syncReads, 0, '3D capture does not synchronously read GPU pixels');
   assert.deepEqual(errors, []);
-  console.log(`PASS desktop logo, real NDI/Spout at 2048 × 1409 / 15 fps, live navigation and All Views, async readback, and workspace shutdown. ${JSON.stringify(probe)}`);
+  console.log(`PASS desktop logo, real NDI/Spout at 1920 × 1080 / 3 fps, live navigation and All Views, async readback, and workspace shutdown. ${JSON.stringify(probe)}`);
 } catch (error) {
   console.error(error);
   const page = await app.firstWindow();
