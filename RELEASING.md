@@ -19,7 +19,7 @@ The Windows build uses:
 pnpm install --frozen-lockfile
 pnpm --dir desktop install --frozen-lockfile
 pnpm exec vite build --config desktop/vite.config.ts
-pnpm --dir desktop build
+pnpm --dir desktop build --publish never
 ```
 
 The build retrieves the official NDI Runtime from `https://ndi.link/NDIRedistV6`, verifies its pinned SHA-256, and includes it through `desktop/build/installer.nsh`. If the upstream hash changes, inspect the vendor release and signature before updating the pin.
