@@ -54,6 +54,24 @@ jobs:
         working-directory: desktop
         run: pnpm build
 
+      - name: Install and launch-check Windows application
+        shell: pwsh
+        run: |
+          $runtime = Start-Process -FilePath 'desktop/build/ndi-runtime/NDI 6 Runtime.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -WindowStyle Hidden -Wait -PassThru
+          if ($runtime.ExitCode -notin @(0, 3010)) { throw "NDI Runtime installation failed" }
+          $installer = @(Get-ChildItem desktop/release/*-Setup.exe)
+          if ($installer.Count -ne 1) { throw "Expected one installer" }
+          $destination = Join-Path $env:RUNNER_TEMP 'OpticMesh-installed'
+          $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S',"/D=$destination" -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "OpticMesh installation failed" }
+          $qa = Join-Path $env:RUNNER_TEMP 'opticmesh-qa'
+          npm install --prefix $qa --no-package-lock --ignore-scripts playwright@1.62.1
+          if ($LASTEXITCODE -ne 0) { throw "Unable to prepare UI verification" }
+          $env:PLAYWRIGHT_MODULE = Join-Path $qa 'node_modules/playwright'
+          $env:OPTICMESH_INSTALLED_APP = Join-Path $destination 'LO2S - OpticMesh.exe'
+          node tests/desktop-release.browser.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Installed application verification failed" }
+
       - name: Package web application and checksums
         shell: pwsh
         run: |
