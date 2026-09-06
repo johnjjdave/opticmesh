@@ -36,7 +36,7 @@ try {
   const startupPath = path.join(documents, 'OpticMesh', 'Projects', 'Startup Project.lo2s');
   const project = JSON.parse(await fs.readFile(startupPath, 'utf8'));
   assert.equal(project.format, 'opticmesh-project');
-  assert(project.rawXml.includes('slice'));
+  assert.equal((project.rawXml.match(/<Slice\s/g) || []).length, 7);
   for (const name of ['OpticMesh-MIT.txt', 'Spout2-BSD.txt', 'THIRD_PARTY_NOTICES.md']) {
     assert((await fs.stat(path.join(path.dirname(executablePath), 'resources', 'licenses', name))).size > 0);
   }
