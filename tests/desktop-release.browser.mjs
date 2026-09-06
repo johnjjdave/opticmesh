@@ -32,7 +32,7 @@ try {
   assert((await manual.innerText()).includes('Compile Project'));
   assert.equal(await manual.locator('a[href^="#manual-"]').count(), 17);
   await page.getByRole('button', { name: 'Close manual', exact: true }).click();
-  await page.waitForFunction(() => document.body.innerText.includes('Autosaved'), { timeout: 15000 });
+  await page.getByRole('status').filter({ hasText: 'Latest changes autosaved' }).waitFor({ timeout: 15000 });
   const startupPath = path.join(documents, 'OpticMesh', 'Projects', 'Startup Project.lo2s');
   const project = JSON.parse(await fs.readFile(startupPath, 'utf8'));
   assert.equal(project.format, 'opticmesh-project');
