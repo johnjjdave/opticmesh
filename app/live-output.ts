@@ -1,4 +1,4 @@
-export const SIMULATION_OUTPUT_FPS = 3;
+export const SIMULATION_OUTPUT_FPS = 30;
 
 /** Fixed 16:9 live camera output, independent of the imported composition raster. */
 export function simulationOutputSize(gpuLimit = Infinity) {

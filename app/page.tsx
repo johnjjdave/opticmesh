@@ -3512,8 +3512,9 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     if (patternOutput === "off" || workspaceMode !== "simulation") return;
     let cancelled = false, timer = 0;
     const pump = async () => {
+      const started = performance.now();
       await patternOutputPushRef.current();
-      if (!cancelled) timer = window.setTimeout(pump, 1000 / SIMULATION_OUTPUT_FPS);
+      if (!cancelled) timer = window.setTimeout(pump, Math.max(0, 1000 / SIMULATION_OUTPUT_FPS - (performance.now() - started)));
     };
     timer = window.setTimeout(pump, 0);
     return () => {

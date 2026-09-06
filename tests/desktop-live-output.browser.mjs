@@ -22,7 +22,7 @@ const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, callback) => handle(channel, async (event, payload) => {
   if (channel === 'output:start') { global.outputProbe.kind = payload.kind; payload = {...payload, name: global.outputProbe.name}; }
   const result = await callback(event, payload);
-  if (channel === 'output:frame' && result.ok) global.outputProbe.frames.push({kind: global.outputProbe.kind, width:payload.width, height:payload.height, fps:payload.fps, bytes:payload.data.byteLength});
+  if (channel === 'output:frame' && result.ok) global.outputProbe.frames.push({kind: global.outputProbe.kind, width:payload.width, height:payload.height, fps:payload.fps, bytes:payload.data.byteLength, at:Date.now()});
   return result;
 });
 require(${JSON.stringify(path.join(root, 'desktop/electron-main.cjs'))});
@@ -56,7 +56,7 @@ try {
     await output.click();
     await page.getByRole('button', { name: kind === 'ndi' ? 'NDI' : 'Spout', exact: true }).click();
     await page.getByRole('button', { name: `Output ${kind.toUpperCase()}`, exact: true }).click();
-    await page.waitForFunction(() => document.body.innerText.includes('1920 × 1080') && document.body.innerText.includes('3 fps · RGBA'), null, { timeout: 20000 });
+    await page.waitForFunction(() => document.body.innerText.includes('1920 × 1080') && document.body.innerText.includes('30 fps · RGBA'), null, { timeout: 20000 });
     console.log(`${kind} connected at configured dimensions`);
     await viewport.focus();
     await page.keyboard.press('F5');
@@ -71,7 +71,8 @@ try {
     const frames = await app.evaluate(() => global.outputProbe.frames);
     const stream = frames.filter(frame => frame.kind === kind);
     assert(stream.length >= 3, `${kind} continues producing frames (${stream.length})`);
-    for (const frame of stream) assert.deepEqual([frame.width, frame.height, frame.fps, frame.bytes], [1920, 1080, 3, 1920 * 1080 * 4]);
+    for (const frame of stream) assert.deepEqual([frame.width, frame.height, frame.fps, frame.bytes], [1920, 1080, 30, 1920 * 1080 * 4]);
+    console.log(`${kind} capture handoffs: ${((stream.length - 1) * 1000 / (stream.at(-1).at - stream[0].at)).toFixed(1)} fps over ${stream.length} frames`);
     await output.click(); await page.getByRole('button', { name: 'OFF', exact: true }).click();
   }
   // Stop/unmount during a queued capture must not leak a stale frame or a graphics error.
@@ -83,7 +84,7 @@ try {
   assert(probe.asyncReads >= 6);
   assert.equal(probe.syncReads, 0, '3D capture does not synchronously read GPU pixels');
   assert.deepEqual(errors, []);
-  console.log(`PASS desktop logo, real NDI/Spout at 1920 × 1080 / 3 fps, live navigation and All Views, async readback, and workspace shutdown. ${JSON.stringify(probe)}`);
+  console.log(`PASS desktop logo, real NDI/Spout at 1920 × 1080 / 30 fps, live navigation and All Views, async readback, and workspace shutdown. ${JSON.stringify(probe)}`);
 } catch (error) {
   console.error(error);
   const page = await app.firstWindow();

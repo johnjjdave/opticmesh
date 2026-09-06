@@ -7,7 +7,7 @@ Features, improvements, fixes, and compatibility notes for LO2S - OpticMesh. Ver
 ### Fixes
 
 - Fixed the LO2S toolbar logo in the Windows application by bundling the artwork with the interface.
-- Set 3D NDI/Spout output to a fixed 1920 × 1080 at 3 fps, independent of the composition raster. The output camera uses a 16:9 frame, and the Output panel shows the stream dimensions.
+- Set 3D NDI/Spout output to a fixed 1920 × 1080 targeting 30 fps, independent of the composition raster. Capture time counts toward frame pacing. The output camera uses a 16:9 frame, and the Output panel shows the stream dimensions.
 - Replaced blocking 3D output readback with asynchronous GPU capture, preserved viewport state during capture, and prevented overlapping captures and stale frames after workspace/protocol changes. The viewport refresh rate remains independent; pattern/map exports retain native resolution.
 
 ## [0.7.0 Beta] - 2026-09-06
