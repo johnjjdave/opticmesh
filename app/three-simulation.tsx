@@ -8,6 +8,7 @@ import { createViewportControls } from "./viewport-controls";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { createGpuTimer, RenderPerformance } from "./render-performance";
 import { simulationOutputSize } from "./live-output";
+import { createSimulationOutputTarget } from "./simulation-output-target";
 
 type Point = { x: number; y: number };
 type Rect = { x: number; y: number; width: number; height: number; points: Point[] };
@@ -636,8 +637,7 @@ export default function ThreeSimulation(props: Props) {
         const { width, height } = simulationOutputSize(renderer.capabilities.maxTextureSize);
         if (!outputTarget || outputTarget.width !== width || outputTarget.height !== height) {
           outputTarget?.dispose();
-          outputTarget = new THREE.WebGLRenderTarget(width, height, { depthBuffer: true, stencilBuffer: false });
-          outputTarget.texture.colorSpace = THREE.SRGBColorSpace;
+          outputTarget = createSimulationOutputTarget(width, height, renderer.capabilities.maxSamples);
           outputPixels = new Uint8Array(width * height * 4);
         }
         const previousTarget = renderer.getRenderTarget();

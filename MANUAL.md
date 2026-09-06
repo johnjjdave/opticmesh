@@ -392,6 +392,8 @@ Only one output protocol is active at a time. Selecting NDI stops Spout; selecti
 
 In **3D**, NDI and Spout use a fixed **1920 × 1080** stream targeting **30 fps**, independent of the composition raster. The output camera uses a 16:9 frame without stretching scene geometry. The Output panel shows the stream dimensions. All Views output uses the Perspective camera; the four editing panes remain independently controllable. The viewport's refresh rate is independent of the stream rate.
 
+3D output preserves the separation between screen faces and their backing at a distance and smooths object edges with antialiasing where supported. These improvements apply to all 3D sources without additional controls.
+
 **Tip:** use the Output panel to check stream size. The 3D streaming limit does not change project dimensions, physical geometry, PNG maps, or compiled project exports. Actual streaming speed depends on scene complexity, hardware, and the receiver.
 
 This output workflow is separate from receiving NDI or Spout as a texture in the 3D Simulation workspace.
