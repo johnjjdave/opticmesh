@@ -1,36 +1,52 @@
 # Release process
 
-Every LO2S Pattern Lab release must include a version-to-version update log. A short highlights list is not a substitute for the changelog.
+Release notes describe the final behavior available to users. Maintain the changelog during development, then consolidate duplicate and superseded entries before publication. Exclude personal projects, internal discussions, benchmark results, feature inspirations, and unimplemented proposals.
 
-## Required release checklist
+## Prepare a release
 
-1. Compare the new release candidate with the previous published tag.
-2. Add a dated section to `CHANGELOG.md` containing:
-   - new features;
-   - interface and workflow improvements;
-   - bug fixes from the previous version;
-   - compatibility or behavior changes;
-   - known limitations;
-   - packaged artifact names when applicable.
-3. Update the current version and download link in `README.md`.
-4. Use the same complete changelog section as the GitHub release notes; a shorter highlights block may appear above it, but must not replace it.
-5. Run the application tests and production build before creating the tag.
-6. Build and launch-check the Windows portable executable when desktop code changed.
-7. Publish through a pull request and wait for required checks before merging or updating the public release.
-8. Keep **Beta** in the version and title whenever the product is still being tested, but use GitHub's release status according to the distribution goal:
-   - publish it as a normal **Latest** release when it is the primary public download and broad testing/feedback is wanted;
-   - use GitHub **prerelease** only when the build should remain secondary to another recommended release.
-   State clearly whether the build is the main download and whether it uses a separate application identity.
+1. Compare the candidate against the previous published tag.
+2. Confirm root and desktop package versions agree. Keep the Beta label when applicable; the Git tag uses the numeric version, for example `v0.7.0`.
+3. Update the dated changelog section, README, Manual, native README, platform requirements, compatibility notes, and license notices. Do not invent release dates, checksums, signing status, or download availability.
+4. Check the tracked-file list. Exclude credentials, local projects, planning notes, design studies, screenshots from internal reviews, dependencies, and generated release folders. Preserve source code, regression fixtures, required assets, build instructions, and third-party licenses.
+5. Run `pnpm test`, `pnpm lint`, the desktop renderer build, browser interaction checks, and relevant native checks.
+6. Open a pull request and wait for all required checks. The Windows workflow produces an NSIS installer and a matching web ZIP; source-validation failures must be resolved before merging.
 
-## Changelog categories
+## Build and verify
 
-Use only the categories that apply, but do not omit fixes merely because they happened during beta testing:
+The Windows build uses:
 
-- **New features** — new workspaces, controls, formats, integrations, and workflows.
-- **Interface and workflow improvements** — layout, readability, navigation, feedback, and quality-of-life changes.
-- **Bug fixes** — regressions and incorrect behavior fixed since the previous tag.
-- **Compatibility notes** — protocol, file-format, platform, and importer behavior.
-- **Known limitations** — unresolved performance, platform, format, or signing constraints.
+```sh
+pnpm install --frozen-lockfile
+pnpm --dir desktop install --frozen-lockfile
+pnpm exec vite build --config desktop/vite.config.ts
+pnpm --dir desktop build
+```
 
-Release notes should be understandable without reading commit messages or previous beta discussions.
+The build retrieves the official NDI Runtime from `https://ndi.link/NDIRedistV6`, verifies its pinned SHA-256, and includes it through `desktop/build/installer.nsh`. If the upstream hash changes, inspect the vendor release and signature before updating the pin.
+
+Verify installation and application launch in an isolated environment. Check the bundled Manual, desktop saving/recovery, export dialogs, native bridge, and changed interactions. Exercise clean installation and upgrade paths where available; record coverage and any limitations in internal release evidence, separate from user release notes. Never use personal recovery files as test fixtures.
+
+The package must include original OpticMesh, font, Spout, and renderer dependency notices. Check final artifact hashes, names, embedded version, and signing status.
+
+## Publish
+
+1. Merge the reviewed pull request after required checks pass.
+2. Create the version tag from the merged commit and a draft GitHub release.
+3. Dispatch **Windows release** with the draft tag as `release_tag`. The workflow builds that exact tag, attaches the installer, web ZIP, and `SHA256SUMS.txt`, and refuses to replace an already published release.
+4. Download and verify the actual attached artifacts. Use the complete version section from CHANGELOG.md as release notes.
+5. Publish as GitHub **Latest** when this is the recommended public download, even if the app remains labelled Beta. Use prerelease status only for a secondary preview.
+6. Deploy the matching public web ZIP. The Pages workflow downloads the latest published release and validates its checksums; source previews are never substituted for release artifacts.
+
+## Post-publication repository review
+
+Before announcing the release, verify:
+
+- the Latest release, installer name, checksums, source tag, and README download link;
+- the hosted app version, HTTPS domain, and its match to the Windows release;
+- every public README and Manual link, feature list, known limitation, and license notice;
+- repository description, homepage, topics, social preview, issue links, and enabled community features;
+- absence of private project data, internal discussions, generated binaries outside release assets, and unused template files;
+- the desktop update endpoint detects the new version and points to the correct release.
+
+Retain previous releases for compatibility and recovery unless a separate removal decision is made. Do not rewrite release history or remove required third-party notices as part of routine cleanup.
 

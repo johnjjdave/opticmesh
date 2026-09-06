@@ -1,22 +1,19 @@
-# Code signing policy
+# Release provenance and privacy
 
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+## Release provenance
 
-LO2S Pattern Lab releases are built from the public source repository at <https://github.com/johnjjdave/lo2s-pattern-lab>.
+LO2S - OpticMesh is published from the [official source repository](https://github.com/johnjjdave/opticmesh). Release source is identified by its Git tag, and Windows downloads include a SHA-256 checksum file.
 
-## Roles
+Current Windows releases are unsigned. A checksum verifies that a download matches the published file; it is not a code-signing certificate. No third-party signing sponsorship is claimed.
 
-- Committers and reviewers: [repository contributors](https://github.com/johnjjdave/lo2s-pattern-lab/graphs/contributors)
-- Approvers: [repository owner](https://github.com/johnjjdave)
+Release changes pass through a pull request and the repository’s required checks before publication. Download artifacts from the official [GitHub Releases](https://github.com/johnjjdave/opticmesh/releases) page.
 
-## Release policy
+## Local files and network access
 
-- Release artifacts must be produced from a tagged commit by the repository's automated Windows build workflow.
-- Every signing request requires manual approval by an approver.
-- Product name and version metadata must match the GitHub release tag.
+OpticMesh processes project files, imported Resolume XML, logos, patterns, and scene geometry locally. It does not upload project content to an LO2S server.
 
-## Privacy policy
+The Windows application creates managed startup and recovery files under Documents\OpticMesh, restores the last working state, and can watch a linked Resolume preset when that feature is enabled. Named project saves and exports use the selected destinations.
 
-The offline desktop program does not transfer information to other networked systems. It reads only files explicitly selected by the user and writes only exports or project files explicitly requested by the user.
+Desktop update checks contact GitHub for release information. Opening external documentation or download links uses the system browser. NDI input/output exchanges video frames over the network when enabled; Spout exchanges frames between applications on the same Windows computer. Video-device access requires the relevant permission.
 
-The hosted preview is delivered over HTTPS but performs XML parsing, image processing, and pattern rendering locally in the browser.
+The hosted application is delivered over HTTPS and processes maps and images in the browser. Its hosting provider receives ordinary web requests. Browser project saving is manual.

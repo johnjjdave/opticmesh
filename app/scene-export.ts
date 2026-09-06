@@ -1,7 +1,10 @@
+import { pivotOffset } from "./slice-pivot";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter.js";
 import { createSliceGeometry, type SimulationSlice, type SliceCurvature, type SlicePivot, type SliceTransform } from "./three-simulation";
+import { normalizeTransform, type TransformGroup } from "./group-transforms";
+import packageMetadata from "../package.json";
 
 export type SceneExportFormat = "glb" | "gltf" | "obj" | "mvr";
 
@@ -16,6 +19,7 @@ export type SceneExportOptions = {
   curvatureBySlice: Record<string, SliceCurvature>;
   pivotBySlice: Record<string, SlicePivot>;
   transforms: Record<string, SliceTransform>;
+  groups?: TransformGroup[];
   drawPatternTexture: (canvas: HTMLCanvasElement) => void;
 };
 
@@ -27,13 +31,25 @@ export type SceneExportResult = {
   triangleCount: number;
 };
 
-type BuiltScene = { scene: THREE.Scene; texture: THREE.CanvasTexture; textureCanvas: HTMLCanvasElement; meshesBySlice: Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.Material[]>>; triangleCount: number };
+type BuiltScene = {
+  scene: THREE.Scene;
+  texture: THREE.CanvasTexture;
+  textureCanvas: HTMLCanvasElement;
+  meshesBySlice: Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.Material[]>>;
+  triangleCount: number;
+};
 type ZipEntry = { name: string; data: Uint8Array };
 
 const encoder = new TextEncoder();
 
 function slugify(value: string) {
-  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "lo2s-scene";
+  return (
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "lo2s-scene"
+  );
 }
 
 function xmlEscape(value: string) {
@@ -68,7 +84,7 @@ function buildScene(options: SceneExportOptions): BuiltScene {
   const textureCanvas = document.createElement("canvas");
   options.drawPatternTexture(textureCanvas);
   const texture = new THREE.CanvasTexture(textureCanvas);
-  texture.name = "OpticMesh Pattern Map";
+  texture.name = "LO2S - OpticMesh Pattern Map";
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -76,36 +92,63 @@ function buildScene(options: SceneExportOptions): BuiltScene {
   texture.generateMipmaps = true;
   texture.needsUpdate = true;
 
-  const front = new THREE.MeshStandardMaterial({ map: texture, emissiveMap: texture, color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1, roughness: 1, metalness: 0, side: THREE.DoubleSide, toneMapped: false, fog: false });
+  const front = new THREE.MeshStandardMaterial({
+    map: texture,
+    emissiveMap: texture,
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 1,
+    roughness: 1,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+    fog: false,
+  });
   front.name = "LED_Surface";
-  const body = new THREE.MeshStandardMaterial({ color: 0x252a2d, roughness: 0.78, metalness: 0.28, side: THREE.DoubleSide });
+  const body = new THREE.MeshStandardMaterial({
+    color: 0x252a2d,
+    roughness: 0.78,
+    metalness: 0.28,
+    side: THREE.DoubleSide,
+  });
   body.name = "Screen_Body";
   const masterPitchM = options.masterPitchMm / 1000;
   const meshesBySlice = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.Material[]>>();
+  const groupObjects = new Map<string, THREE.Group>();
+  const groupBySlice = new Map<string, TransformGroup>();
+  (options.groups || []).forEach((group) => {
+    const object = new THREE.Group(),
+      transform = normalizeTransform(group.transform);
+    object.name = group.name;
+    object.position.fromArray(transform.position);
+    object.rotation.fromArray([...transform.rotation, "XYZ"]);
+    object.scale.fromArray(transform.scale || [1, 1, 1]);
+    object.userData = {
+      lo2sUuid: deterministicUuid(`lo2s:group:${group.id}`),
+      groupId: group.id,
+      groupName: group.name,
+    };
+    root.add(object);
+    groupObjects.set(group.id, object);
+    group.sliceIds.forEach((id) => groupBySlice.set(id, group));
+  });
+  (options.groups || []).forEach((group) => {
+    if (!group.parentId) return;
+    const object = groupObjects.get(group.id),
+      parent = groupObjects.get(group.parentId);
+    if (object && parent && object !== parent) parent.add(object);
+  });
   let triangleCount = 0;
 
   options.slices.forEach((slice) => {
     const localPitchM = (options.pitchBySlice[slice.id] || options.masterPitchMm) / 1000;
     const pivot = options.pivotBySlice[slice.id] || "bottom-center";
-    const geometry = createSliceGeometry(
-      slice,
-      localPitchM,
-      options.depthBySlice[slice.id] || 0.01,
-      options.curvatureBySlice[slice.id] || { horizontal: 0, vertical: 0 },
-      options.compositionWidth,
-      options.compositionHeight,
-      pivot,
-      false,
-    );
+    const geometry = createSliceGeometry(slice, localPitchM, options.depthBySlice[slice.id] || 0.01, options.curvatureBySlice[slice.id] || { horizontal: 0, vertical: 0 }, options.compositionWidth, options.compositionHeight, pivot, false);
     triangleCount += geometry.getAttribute("position").count / 3;
     const mesh = new THREE.Mesh(geometry, [front, body]);
     mesh.name = `${slice.screenName} - ${slice.name}`;
-    const pivotInputX = pivot === "bottom-left" ? slice.input.x : pivot === "bottom-right" ? slice.input.x + slice.input.width : slice.input.x + slice.input.width / 2;
-    const initialPosition: [number, number, number] = [
-      (pivotInputX - options.compositionWidth / 2) * masterPitchM,
-      (options.compositionHeight - slice.input.y - slice.input.height) * masterPitchM,
-      0,
-    ];
+    const offset = pivotOffset(pivot, slice.input.width * localPitchM, slice.input.height * localPitchM);
+    const initialPosition: [number, number, number] = [(slice.input.x + slice.input.width / 2 - options.compositionWidth / 2) * masterPitchM + offset[0], (options.compositionHeight - slice.input.y - slice.input.height / 2) * masterPitchM + offset[1], offset[2]];
     const saved = options.transforms[slice.id];
     mesh.position.fromArray(saved?.position || initialPosition);
     if (saved) mesh.rotation.fromArray([...saved.rotation, "XYZ"]);
@@ -120,9 +163,15 @@ function buildScene(options: SceneExportOptions): BuiltScene {
       depthCm: (options.depthBySlice[slice.id] || 0.01) * 100,
       horizontalCurveDegrees: options.curvatureBySlice[slice.id]?.horizontal || 0,
       verticalCurveDegrees: options.curvatureBySlice[slice.id]?.vertical || 0,
-      inputPixels: { x: slice.input.x, y: slice.input.y, width: slice.input.width, height: slice.input.height },
+      inputPixels: {
+        x: slice.input.x,
+        y: slice.input.y,
+        width: slice.input.width,
+        height: slice.input.height,
+      },
     };
-    root.add(mesh);
+    const group = groupBySlice.get(slice.id);
+    (group ? groupObjects.get(group.id) || root : root).add(mesh);
     meshesBySlice.set(slice.id, mesh);
   });
   scene.updateMatrixWorld(true);
@@ -173,7 +222,10 @@ function crc32(data: Uint8Array) {
 function concatBytes(parts: Uint8Array[]) {
   const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let offset = 0;
-  parts.forEach((part) => { output.set(part, offset); offset += part.length; });
+  parts.forEach((part) => {
+    output.set(part, offset);
+    offset += part.length;
+  });
   return output;
 }
 
@@ -313,13 +365,21 @@ function meshObject3ds(name: string, geometry: THREE.BufferGeometry, start: numb
   const faceChunk = binaryChunk(0x4120, faceData, binaryChunk(0x4130, nullString(materialName), materialFaces));
   const localAxes = new Uint8Array(48);
   const axes = new DataView(localAxes.buffer);
-  [1,0,0, 0,1,0, 0,0,1, 0,0,0].forEach((value, index) => axes.setFloat32(index * 4, value, true));
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0].forEach((value, index) => axes.setFloat32(index * 4, value, true));
   return binaryChunk(0x4000, nullString(`${name}_${String(batchIndex).padStart(2, "0")}`), binaryChunk(0x4100, binaryChunk(0x4110, vertices), faceChunk, binaryChunk(0x4140, mapping), binaryChunk(0x4160, localAxes)));
 }
 
 function geometry3ds(geometry: THREE.BufferGeometry, name: string, textureFilename: string) {
   if (geometry.index) geometry = geometry.toNonIndexed();
-  const groups = geometry.groups.length ? geometry.groups : [{ start: 0, count: geometry.getAttribute("position").count, materialIndex: 0 }];
+  const groups = geometry.groups.length
+    ? geometry.groups
+    : [
+        {
+          start: 0,
+          count: geometry.getAttribute("position").count,
+          materialIndex: 0,
+        },
+      ];
   const objects: Uint8Array[] = [];
   let faceCount = 0;
   groups.forEach((group, groupIndex) => {
@@ -336,18 +396,22 @@ function geometry3ds(geometry: THREE.BufferGeometry, name: string, textureFilena
     }
   });
   if (!faceCount) throw new Error(`MVR geometry ${name} contains no faces.`);
-  const editor = binaryChunk(0x3d3d,
-    material3ds("LED_Surface", [255,255,255], textureFilename, true),
-    material3ds("Screen_Body", [37,42,45]),
-    ...objects,
-  );
+  const editor = binaryChunk(0x3d3d, material3ds("LED_Surface", [255, 255, 255], textureFilename, true), material3ds("Screen_Body", [37, 42, 45]), ...objects);
   return { data: binaryChunk(0x4d4d, editor), faceCount };
 }
 
 async function gltfJsonAndAssets(scene: THREE.Scene, basename: string) {
-  const exported = await new GLTFExporter().parseAsync(scene, { binary: false, onlyVisible: true, trs: true, includeCustomExtensions: false });
+  const exported = await new GLTFExporter().parseAsync(scene, {
+    binary: false,
+    onlyVisible: true,
+    trs: true,
+    includeCustomExtensions: false,
+  });
   if (exported instanceof ArrayBuffer) throw new Error("Expected a JSON glTF export.");
-  const json = exported as Record<string, unknown> & { buffers?: Array<{ uri?: string }>; images?: Array<{ uri?: string }> };
+  const json = exported as Record<string, unknown> & {
+    buffers?: Array<{ uri?: string }>;
+    images?: Array<{ uri?: string }>;
+  };
   const files: ZipEntry[] = [];
   json.buffers?.forEach((buffer, index) => {
     if (!buffer.uri?.startsWith("data:")) return;
@@ -361,7 +425,10 @@ async function gltfJsonAndAssets(scene: THREE.Scene, basename: string) {
     files.push({ name: filename, data: decodeDataUri(image.uri) });
     image.uri = filename;
   });
-  files.unshift({ name: `${basename}.gltf`, data: encoder.encode(JSON.stringify(json, null, 2)) });
+  files.unshift({
+    name: `${basename}.gltf`,
+    data: encoder.encode(JSON.stringify(json, null, 2)),
+  });
   return files;
 }
 
@@ -380,8 +447,8 @@ function createMvrXml(options: SceneExportOptions, geometryFilename: string) {
   const layerUuid = deterministicUuid(`lo2s:layer:${options.projectName}`);
   const sceneUuid = deterministicUuid(`lo2s:scene:${options.projectName}`);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<GeneralSceneDescription verMajor="1" verMinor="5" provider="OpticMesh" providerVersion="1.3.3-beta">
-  <UserData><Data provider="OpticMesh" ver="1.3"><SliceCount>${options.slices.length}</SliceCount></Data></UserData>
+<GeneralSceneDescription verMajor="1" verMinor="5" provider="LO2S - OpticMesh" providerVersion="${packageMetadata.version}">
+  <UserData><Data provider="LO2S - OpticMesh" ver="${packageMetadata.version}"><SliceCount>${options.slices.length}</SliceCount></Data></UserData>
   <Scene>
     <AUXData/>
     <Layers>
@@ -410,7 +477,12 @@ async function buildMvrFiles(built: BuiltScene, options: SceneExportOptions, bas
   // individual Geometry3D resources from a multi-file package. The same GLB
   // scene path is already interoperable across the target applications, keeps
   // each slice as a named node, and preserves all local axes and transforms.
-  const exported = await new GLTFExporter().parseAsync(built.scene, { binary: true, onlyVisible: true, trs: true, includeCustomExtensions: false });
+  const exported = await new GLTFExporter().parseAsync(built.scene, {
+    binary: true,
+    onlyVisible: true,
+    trs: true,
+    includeCustomExtensions: false,
+  });
   if (!(exported instanceof ArrayBuffer)) throw new Error("MVR validation failed: the embedded scene is not a binary GLB.");
   const sceneData = new Uint8Array(exported);
   if (sceneData.length < 20 || new DataView(sceneData.buffer, sceneData.byteOffset, sceneData.byteLength).getUint32(0, true) !== 0x46546c67) {
@@ -418,7 +490,10 @@ async function buildMvrFiles(built: BuiltScene, options: SceneExportOptions, bas
   }
   const geometryFilename = `${basename}-screens.glb`;
   return [
-    { name: "GeneralSceneDescription.xml", data: encoder.encode(createMvrXml(options, geometryFilename)) },
+    {
+      name: "GeneralSceneDescription.xml",
+      data: encoder.encode(createMvrXml(options, geometryFilename)),
+    },
     { name: geometryFilename, data: sceneData },
   ];
 }
@@ -429,14 +504,31 @@ export async function exportSimulationScene(format: SceneExportFormat, options: 
   const built = buildScene(options);
   try {
     if (format === "glb") {
-      const result = await new GLTFExporter().parseAsync(built.scene, { binary: true, onlyVisible: true, trs: true, includeCustomExtensions: false });
+      const result = await new GLTFExporter().parseAsync(built.scene, {
+        binary: true,
+        onlyVisible: true,
+        trs: true,
+        includeCustomExtensions: false,
+      });
       if (!(result instanceof ArrayBuffer)) throw new Error("The GLB exporter did not return binary data.");
-      return { blob: new Blob([result], { type: "model/gltf-binary" }), filename: `${basename}.glb`, mimeType: "model/gltf-binary", sliceCount: options.slices.length, triangleCount: built.triangleCount };
+      return {
+        blob: new Blob([result], { type: "model/gltf-binary" }),
+        filename: `${basename}.glb`,
+        mimeType: "model/gltf-binary",
+        sliceCount: options.slices.length,
+        triangleCount: built.triangleCount,
+      };
     }
 
     if (format === "gltf") {
       const files = await gltfJsonAndAssets(built.scene, basename);
-      return { blob: new Blob([createStoredZip(files)], { type: "application/zip" }), filename: `${basename}-gltf.zip`, mimeType: "application/zip", sliceCount: options.slices.length, triangleCount: built.triangleCount };
+      return {
+        blob: new Blob([createStoredZip(files)], { type: "application/zip" }),
+        filename: `${basename}-gltf.zip`,
+        mimeType: "application/zip",
+        sliceCount: options.slices.length,
+        triangleCount: built.triangleCount,
+      };
     }
 
     if (format === "obj") {
@@ -448,14 +540,32 @@ export async function exportSimulationScene(format: SceneExportFormat, options: 
       const files: ZipEntry[] = [
         { name: `${basename}.obj`, data: encoder.encode(objWithMtl) },
         { name: `${basename}.mtl`, data: encoder.encode(mtl) },
-        { name: `${basename}-texture.png`, data: new Uint8Array(await textureBlob.arrayBuffer()) },
+        {
+          name: `${basename}-texture.png`,
+          data: new Uint8Array(await textureBlob.arrayBuffer()),
+        },
       ];
-      files.push({ name: "README.txt", data: encoder.encode(`LO2S OBJ export\n\n${basename}.obj contains the complete world-positioned scene with all screen transforms baked into its vertices.\n\nOBJ preserves geometry, UV mapping and world placement, but it has no standard field for editable local pivots or transform nodes. GLB/glTF should be used when the receiving software needs that hierarchy.\n`) });
-      return { blob: new Blob([createStoredZip(files)], { type: "application/zip" }), filename: `${basename}-obj.zip`, mimeType: "application/zip", sliceCount: options.slices.length, triangleCount: built.triangleCount };
+      files.push({
+        name: "README.txt",
+        data: encoder.encode(`LO2S OBJ export\n\n${basename}.obj contains the complete world-positioned scene with all screen transforms baked into its vertices.\n\nOBJ preserves geometry, UV mapping and world placement, but it has no standard field for editable local pivots or transform nodes. GLB/glTF should be used when the receiving software needs that hierarchy.\n`),
+      });
+      return {
+        blob: new Blob([createStoredZip(files)], { type: "application/zip" }),
+        filename: `${basename}-obj.zip`,
+        mimeType: "application/zip",
+        sliceCount: options.slices.length,
+        triangleCount: built.triangleCount,
+      };
     }
 
     const files = await buildMvrFiles(built, options, basename);
-    return { blob: new Blob([createStoredZip(files)], { type: "application/x-mvr" }), filename: `${basename}.mvr`, mimeType: "application/x-mvr", sliceCount: options.slices.length, triangleCount: built.triangleCount };
+    return {
+      blob: new Blob([createStoredZip(files)], { type: "application/x-mvr" }),
+      filename: `${basename}.mvr`,
+      mimeType: "application/x-mvr",
+      sliceCount: options.slices.length,
+      triangleCount: built.triangleCount,
+    };
   } finally {
     disposeBuiltScene(built);
   }

@@ -32,7 +32,7 @@ function writePacket(child, width, height) {
 
 function testSender(kind) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bridge, ["--send", kind, "--name", `OpticMesh ${kind.toUpperCase()} Smoke Test`], { windowsHide: true });
+    const child = spawn(bridge, ["--send", kind, "--name", `LO2S - OpticMesh ${kind.toUpperCase()} Smoke Test`], { windowsHide: true });
     let stderr = "", settled = false, firstFrameSeen = false;
     const timer = setTimeout(() => finish(new Error(`${kind} sender timed out: ${stderr}`)), 8000);
     const finish = (error) => {

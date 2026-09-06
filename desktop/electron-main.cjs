@@ -4,9 +4,13 @@ const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
 const { fileURLToPath } = require("node:url");
 const { promisify } = require("node:util");
+const { writeCompiledProject } = require("./compile-project.cjs");
 
 const appRoot = __dirname;
 const MAX_XML_BYTES = 32 * 1024 * 1024;
+const MAX_PROJECT_BYTES = 128 * 1024 * 1024;
+const SUPPORTED_PROJECT_SCHEMA = 3;
+const WORKSPACE_DIRECTORY_NAME = "OpticMesh";
 let linkedDirectory = null;
 let linkedWatcher = null;
 let linkedPoller = null;
@@ -21,8 +25,74 @@ let nativeOutputWriting = false;
 let nativeOutputLatest = null;
 let nativeOutputLastError = "";
 let exportDirectories = null;
+const writableProjectPaths = new Set();
 const execFileAsync = promisify(execFile);
 let nativeBridgePath = path.join(appRoot, "native", "lo2s-source-bridge.exe");
+
+function workspacePaths() {
+  const root = path.join(app.getPath("documents"), WORKSPACE_DIRECTORY_NAME);
+  return {
+    root,
+    projects: path.join(root, "Projects"),
+    exports: path.join(root, "Exports"),
+    testPatterns: path.join(root, "Test Patterns"),
+    startupProject: path.join(root, "Projects", "Startup Project.lo2s"),
+    previousStartupProject: path.join(root, "Projects", "Startup Project.previous.lo2s"),
+  };
+}
+
+async function ensureWorkspaceDirectories() {
+  const locations = workspacePaths();
+  await Promise.all([locations.projects, locations.exports, locations.testPatterns].map((directory) => fs.promises.mkdir(directory, { recursive: true })));
+  return locations;
+}
+
+function projectBuffer(payload) {
+  const data = Buffer.from(payload?.data || []);
+  if (!data.length || data.length > MAX_PROJECT_BYTES) throw new Error("The project data is empty or exceeds the 128 MB safety limit.");
+  const parsed = JSON.parse(data.toString("utf8"));
+  if (parsed?.format !== "opticmesh-project") throw new Error("The project data is not a LO2S - OpticMesh project.");
+  if (Number(parsed.version || 1) > SUPPORTED_PROJECT_SCHEMA) throw new Error(`This project uses schema ${parsed.version}, but this version supports up to schema ${SUPPORTED_PROJECT_SCHEMA}.`);
+  return data;
+}
+
+function ensureWorkspaceDirectoriesSync() {
+  const locations = workspacePaths();
+  for (const directory of [locations.projects, locations.exports, locations.testPatterns]) fs.mkdirSync(directory, { recursive: true });
+  return locations;
+}
+
+function atomicWriteProjectSync(targetPath, data, backupPath) {
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  const temporaryPath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    fs.writeFileSync(temporaryPath, data, { flag: "wx", flush: true });
+    if (backupPath && fs.existsSync(targetPath)) fs.copyFileSync(targetPath, backupPath);
+    fs.renameSync(temporaryPath, targetPath);
+  } catch (error) {
+    try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+    throw error;
+  }
+}
+
+async function atomicWriteProject(targetPath, data, backupPath) {
+  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+  const temporaryPath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
+  const handle = await fs.promises.open(temporaryPath, "wx");
+  try {
+    await handle.writeFile(data);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    if (backupPath && fs.existsSync(targetPath)) await fs.promises.copyFile(targetPath, backupPath);
+    await fs.promises.rename(temporaryPath, targetPath);
+  } catch (error) {
+    await fs.promises.rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
 
 function numericVersion(value) {
   return String(value || "").replace(/^v/i, "").split("-")[0].split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -39,7 +109,7 @@ function isNewerVersion(candidate, current) {
 async function checkForUpdate() {
   try {
     const response = await net.fetch("https://api.github.com/repos/johnjjdave/opticmesh/releases/latest", {
-      headers: { Accept: "application/vnd.github+json", "User-Agent": `OpticMesh/${app.getVersion()}` },
+      headers: { Accept: "application/vnd.github+json", "User-Agent": `LO2S-OpticMesh/${app.getVersion()}` },
     });
     if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
     const release = await response.json();
@@ -52,8 +122,10 @@ async function checkForUpdate() {
 
 async function loadExportDirectories() {
   if (exportDirectories) return exportDirectories;
-  try { exportDirectories = JSON.parse(await fs.promises.readFile(path.join(app.getPath("userData"), "export-locations.json"), "utf8")); }
-  catch { exportDirectories = {}; }
+  const locations = await ensureWorkspaceDirectories();
+  const defaults = { project: locations.projects, scene3d: locations.exports, png: locations.testPatterns };
+  try { exportDirectories = { ...defaults, ...JSON.parse(await fs.promises.readFile(path.join(app.getPath("userData"), "export-locations-v2.json"), "utf8")) }; }
+  catch { exportDirectories = defaults; }
   return exportDirectories;
 }
 
@@ -61,7 +133,7 @@ async function rememberExportDirectory(category, filePath) {
   const directories = await loadExportDirectories();
   directories[category] = path.dirname(filePath);
   await fs.promises.mkdir(app.getPath("userData"), { recursive: true });
-  await fs.promises.writeFile(path.join(app.getPath("userData"), "export-locations.json"), JSON.stringify(directories));
+  await fs.promises.writeFile(path.join(app.getPath("userData"), "export-locations-v2.json"), JSON.stringify(directories));
 }
 
 async function prepareNativeBridge() {
@@ -298,7 +370,7 @@ async function startResolumeLink(window) {
 
 function createWindow() {
   const window = new BrowserWindow({
-    title: "OpticMesh",
+    title: "LO2S - OpticMesh",
     width: 1440,
     height: 940,
     minWidth: 1024,
@@ -323,6 +395,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  try { await ensureWorkspaceDirectories(); }
+  catch (error) { console.error("Unable to prepare the OpticMesh workspace:", error); }
   try { await prepareNativeBridge(); }
   catch (error) { console.error("Unable to prepare native source bridge:", error); }
   protocol.interceptFileProtocol("file", (request, callback) => callback({ path: resolveFileRequest(request.url) }));
@@ -403,7 +477,7 @@ app.whenReady().then(async () => {
     if (kind !== "ndi" && kind !== "spout") return { ok: false, error: "Choose NDI or Spout output." };
     if (!fs.existsSync(nativeBridgePath)) return { ok: false, error: "The native output helper is missing." };
     await stopNativeOutput();
-    const child = spawn(nativeBridgePath, ["--send", kind, "--name", String(payload?.name || "OpticMesh")], { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    const child = spawn(nativeBridgePath, ["--send", kind, "--name", String(payload?.name || "LO2S - OpticMesh")], { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
     nativeOutputProcess = child;
     nativeOutputOwner = event.sender;
     nativeOutputLastError = "";
@@ -470,7 +544,7 @@ app.whenReady().then(async () => {
     const labels = { png: "PNG image", glb: "glTF Binary", zip: "ZIP package", mvr: "MVR 1.5 scene meshes", obj: "Wavefront OBJ", gltf: "glTF scene" };
     const directories = await loadExportDirectories();
     const result = await dialog.showSaveDialog({
-      title: category === "png" ? "Export OpticMesh PNG" : "Export OpticMesh 3D scene",
+      title: category === "png" ? "Export LO2S - OpticMesh PNG" : "Export LO2S - OpticMesh 3D scene",
       defaultPath: path.join(directories[category] || app.getPath("documents"), filename),
       filters: [{ name: labels[extension] || "3D scene", extensions: [extension || "glb"] }],
     });
@@ -489,19 +563,122 @@ app.whenReady().then(async () => {
     if (path.extname(filename).toLowerCase() !== ".lo2s") filename += ".lo2s";
     const directories = await loadExportDirectories();
     const result = await dialog.showSaveDialog({
-      title: "Save OpticMesh project",
+      title: "Save LO2S - OpticMesh project",
       defaultPath: path.join(directories.project || app.getPath("documents"), filename),
-      filters: [{ name: "OpticMesh project", extensions: ["lo2s"] }],
+      filters: [{ name: "LO2S - OpticMesh project", extensions: ["lo2s"] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
     try {
-      await fs.promises.writeFile(result.filePath, Buffer.from(payload?.data || []));
+      await atomicWriteProject(result.filePath, projectBuffer(payload));
       await rememberExportDirectory("project", result.filePath);
+      writableProjectPaths.add(path.resolve(result.filePath));
       return { ok: true, path: result.filePath };
     } catch (error) {
       return { ok: false, error: error.message };
     }
   });
+
+  ipcMain.handle("project:compile", async (_event, payload) => {
+    try {
+      const directories = await ensureWorkspaceDirectories();
+      const suggested = path.basename(String(payload?.name || "OpticMesh Project")).replace(/[<>:"/\\|?*]/g, "-");
+      const result = await dialog.showSaveDialog({
+        title: "Compile Project — name the new folder", buttonLabel: "Compile",
+        defaultPath: path.join(directories.projects, suggested),
+        filters: [{ name: "Project folder (no extension)", extensions: ["*"] }],
+      });
+      if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+      return await writeCompiledProject(result.filePath, payload);
+    } catch (error) {
+      return { ok: false, error: error.code === "EEXIST" ? "That folder already exists. Compile again with a new name." : error.message };
+    }
+  });
+
+  ipcMain.handle("export:save-batch", async (_event, payload) => {
+    try {
+      const locations = await ensureWorkspaceDirectories();
+      const files = Array.isArray(payload?.files) ? payload.files : [];
+      if (!files.length || files.length > 1000) throw new Error("The export batch is empty or too large.");
+      for (const file of files) {
+        const filename = path.basename(String(file?.filename || "test-pattern.png"));
+        if (path.extname(filename).toLowerCase() !== ".png") throw new Error("Batch test-pattern exports must use PNG files.");
+        const data = Buffer.from(file?.data || []);
+        if (!data.length || data.length > 512 * 1024 * 1024) throw new Error(`Invalid export data for ${filename}.`);
+        await fs.promises.writeFile(path.join(locations.testPatterns, filename), data);
+      }
+      return { ok: true, count: files.length, path: locations.testPatterns };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("project:open", async () => {
+    const locations = await ensureWorkspaceDirectories();
+    const result = await dialog.showOpenDialog({
+      title: "Open LO2S - OpticMesh project",
+      defaultPath: locations.projects,
+      properties: ["openFile"],
+      filters: [{ name: "LO2S - OpticMesh project", extensions: ["lo2s"] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    try {
+      const content = await fs.promises.readFile(result.filePaths[0], "utf8");
+      projectBuffer({ data: Buffer.from(content, "utf8") });
+      writableProjectPaths.add(path.resolve(result.filePaths[0]));
+      return { ok: true, path: result.filePaths[0], name: path.basename(result.filePaths[0]), content };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("project:overwrite", async (_event, payload) => {
+    try {
+      const targetPath = path.resolve(String(payload?.path || ""));
+      if (path.extname(targetPath).toLowerCase() !== ".lo2s" || !writableProjectPaths.has(targetPath)) throw new Error("This project is not an active named project. Use Save As first.");
+      await atomicWriteProject(targetPath, projectBuffer(payload));
+      return { ok: true, path: targetPath, savedAt: Date.now() };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("project:autosave", async (_event, payload) => {
+    try {
+      const locations = await ensureWorkspaceDirectories();
+      const data = projectBuffer(payload);
+      await atomicWriteProject(locations.startupProject, data, locations.previousStartupProject);
+      return { ok: true, path: locations.startupProject, savedAt: Date.now() };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.on("project:autosave-sync", (event, payload) => {
+    try {
+      const locations = ensureWorkspaceDirectoriesSync();
+      atomicWriteProjectSync(locations.startupProject, projectBuffer(payload), locations.previousStartupProject);
+      event.returnValue = { ok: true, path: locations.startupProject, savedAt: Date.now() };
+    } catch (error) {
+      event.returnValue = { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("project:load-startup", async () => {
+    const locations = await ensureWorkspaceDirectories();
+    for (const candidate of [locations.startupProject, locations.previousStartupProject]) {
+      try {
+        const content = await fs.promises.readFile(candidate, "utf8");
+        projectBuffer({ data: Buffer.from(content, "utf8") });
+        return { ok: true, restored: true, recoveryUsed: candidate === locations.previousStartupProject, path: candidate, content };
+      } catch (error) {
+        if (error.code !== "ENOENT") console.error(`Unable to restore ${candidate}:`, error);
+      }
+    }
+    return { ok: true, restored: false, path: locations.startupProject };
+  });
+
+  ipcMain.handle("workspace:paths", async () => ({ ok: true, ...(await ensureWorkspaceDirectories()) }));
+  ipcMain.handle("workspace:reveal-projects", async () => { const locations = await ensureWorkspaceDirectories(); const error = await shell.openPath(locations.projects); return error ? { ok: false, error } : { ok: true, path: locations.projects }; });
 
   session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === "media" || permission === "fullscreen");
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => callback(permission === "media" || permission === "fullscreen"));
