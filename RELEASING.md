@@ -35,7 +35,7 @@ The package must include original OpticMesh, font, Spout, and renderer dependenc
 3. Dispatch **Windows release** with the draft tag as `release_tag`. The workflow builds that exact tag, attaches the installer, web ZIP, and `SHA256SUMS.txt`, and refuses to replace an already published release.
 4. Download and verify the actual attached artifacts. Use the complete version section from CHANGELOG.md as release notes.
 5. Publish as GitHub **Latest** when this is the recommended public download, even if the app remains labelled Beta. Use prerelease status only for a secondary preview.
-6. Deploy the matching public web ZIP. The Pages workflow downloads the latest published release and validates its checksums; source previews are never substituted for release artifacts.
+6. Dispatch **Deploy website** on `main` after publication. The Pages environment permits deployments from `main`; release-tag events cannot deploy directly. The workflow downloads the latest published web ZIP and validates its checksums; source previews are never substituted for release artifacts.
 
 ## Post-publication repository review
 
