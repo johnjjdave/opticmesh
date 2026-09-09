@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createStudioEnvironment, type StudioEnvironment, type ReflectionPreset } from "./studio-environment";
+import { DEFAULT_BODY_MATERIAL, type BodyAppearance } from "./slice-material";
+import { SelectionOutline } from "./selection-outline";
+import { applyBodyMaterial, createModelMaterial, ModelLayer, descendants, inherited, modelSelectionPivot, type ImportedModel } from "./model-data";
 import * as THREE from "three";
 import { pivotOffset, pivotKey, type SlicePivot } from "./slice-pivot";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -9,12 +13,14 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { createGpuTimer, RenderPerformance } from "./render-performance";
 import { simulationOutputSize } from "./live-output";
 import { createSimulationOutputTarget } from "./simulation-output-target";
+import { createSceneGround, WORLD_GRID_STEP_METRES } from "./scene-ground";
 
 type Point = { x: number; y: number };
 type Rect = { x: number; y: number; width: number; height: number; points: Point[] };
 export type SimulationSlice = { id: string; name: string; screenName: string; input: Rect; output: Rect; warped: boolean; paletteIndex: number };
 export type SliceTransform = { position: [number, number, number]; rotation: [number, number, number]; scale?: [number, number, number] };
-export type CameraState = { position: [number, number, number]; target: [number, number, number] };
+type CameraPose = { position: [number, number, number]; target: [number, number, number] };
+export type CameraState = CameraPose & { orthographic?: Partial<Record<"top" | "right" | "front", CameraPose & { zoom: number; halfHeight: number }>> };
 export type TransformMode = "translate" | "rotate" | "scale";
 export type SimulationSource = "pattern" | "video" | "ndi" | "spout";
 export type SimulationView = "perspective" | "top" | "right" | "front" | "four";
@@ -23,7 +29,18 @@ export type SliceCurvature = { horizontal: number; vertical: number };
 export type SimulationOutputFrame = { width: number; height: number; data: ArrayBuffer };
 export type SimulationOutputCapture = () => Promise<SimulationOutputFrame>;
 
-type Props = {
+export type SimulationProps = {
+  transferActive?:boolean;
+  onTransferTarget?:(target:{kind:"slice"|"model";id:string})=>void;
+  previewOnly?: boolean;
+  renderPaused?: boolean;
+  outputActive?: boolean;
+  bodyAppearanceBySlice?: Record<string,BodyAppearance>;
+  models?: ImportedModel[];
+  modelSelection?: string[];
+  onModelSelection?: (ids: string[], additive?:boolean) => void;
+  onModelTransform?: (delta: number[], rotations?: Record<string,[number,number,number]>) => void;
+  onModelTransformPreview?: (delta: number[] | null, rotations?: Record<string,[number,number,number]>) => void;
   snapEnabled?: boolean;
   performanceMetrics?: RenderPerformance;
   slices: SimulationSlice[];
@@ -46,6 +63,7 @@ type Props = {
   sourceMedia: Partial<Record<"video" | "ndi" | "spout", HTMLVideoElement | HTMLCanvasElement>>;
   sourceQuality: "latency" | "quality";
   cameraState?: CameraState;
+  cameraMemory?: { current: CameraState | undefined };
   textureVersion: string;
   fitSignal: number;
   focusSignal: number;
@@ -53,19 +71,17 @@ type Props = {
   gridVisible: boolean;
   floorVisible: boolean;
   backgroundLevel: number;
+  reflectionPreset?: ReflectionPreset;
   interactiveGeometryPreview: boolean;
   drawPatternTexture: (canvas: HTMLCanvasElement, slice?: SimulationSlice) => void;
-  onSelectionChange: (ids: string[]) => void;
+  onSelectionChange: (ids: string[], additive?:boolean) => void;
   onTransformPreview: (updates: Record<string, SliceTransform> | null) => void;
   onTransformsChange: (updates: Record<string, SliceTransform>) => void;
   onCameraChange: (camera: CameraState) => void;
   onOutputCaptureReady?: (capture: SimulationOutputCapture | null) => void;
 };
 
-type SliceObject = THREE.Mesh<THREE.BufferGeometry, THREE.Material[]> & { userData: { sliceId: string; geometryKey?: string } };
-
-const WORLD_FLOOR_SIZE_METRES = 2000;
-const WORLD_GRID_STEP_METRES = 1;
+type SliceObject = THREE.Mesh<THREE.BufferGeometry, THREE.Material[]> & { userData: { sliceId: string; geometryKey?: string; modelPick?: boolean } };
 
 function tuple(vector: THREE.Vector3): [number, number, number] {
   return [vector.x, vector.y, vector.z];
@@ -194,7 +210,11 @@ export function createSliceGeometry(slice: SimulationSlice, pitchM: number, dept
   return geometry;
 }
 
-export default function ThreeSimulation(props: Props) {
+export default function ThreeSimulation(props: SimulationProps) {
+  const initialCamera = useRef(props.cameraMemory?.current || props.cameraState);
+  // Signals are commands, not persistent view settings. Do not replay them on return.
+  const lastFitSignal = useRef(props.cameraMemory?.current || props.cameraState ? props.fitSignal : 0);
+  const lastFocusSignal = useRef(props.focusSignal);
   const mountRef = useRef<HTMLDivElement>(null);
   const marqueeRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<{
@@ -202,7 +222,10 @@ export default function ThreeSimulation(props: Props) {
     focusSelection: () => void;
     setView: (view: SimulationView) => void;
     render: () => void;
+    refreshRendering: () => void;
+    refreshMedia: () => void;
     updateClipping: () => void;
+    updateTopology: () => void;
     controls: OrbitControls;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
@@ -211,6 +234,8 @@ export default function ThreeSimulation(props: Props) {
     meshes: Map<string, SliceObject>;
     patternTextures: Map<string, THREE.CanvasTexture>;
     scene: THREE.Scene;
+    modelLayer: ModelLayer;
+    studio: { target: StudioEnvironment };
     grid: THREE.GridHelper;
     floor: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
     externalTextures: Partial<Record<"video" | "ndi" | "spout", THREE.Texture>>;
@@ -232,7 +257,13 @@ export default function ThreeSimulation(props: Props) {
   useEffect(() => {
     const host = mountRef.current;
     if (!host) return;
+    const document = host.ownerDocument;
+    const window = document.defaultView!;
+    const requestAnimationFrame = window.requestAnimationFrame.bind(window);
+    const cancelAnimationFrame = window.cancelAnimationFrame.bind(window);
     const scene = new THREE.Scene();
+    const modelLayer = new ModelLayer(); scene.add(modelLayer.root);
+    const selectionOutline=new SelectionOutline();
     scene.background = new THREE.Color(0x090b0c);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true, reversedDepthBuffer: true });
@@ -240,10 +271,16 @@ export default function ThreeSimulation(props: Props) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
     renderer.shadowMap.enabled = false;
     host.appendChild(renderer.domElement);
+    const createReflections = () => createStudioEnvironment(renderer, texture => {
+      modelLayer.setEnvironment(texture);
+      runtimeRef.current?.meshes.forEach(mesh => { const body = mesh.material[1] as THREE.MeshPhysicalMaterial; body.envMap = texture; body.needsUpdate = true; });
+      runtimeRef.current?.render();
+    }, latestRef.current.reflectionPreset || 1);
+    const studio={target:createReflections()};modelLayer.setEnvironment(studio.target.texture);
     const metrics = props.performanceMetrics ?? new RenderPerformance();
     metrics.reset();
-    const gpuTimer = createGpuTimer(renderer.getContext(), metrics);
-    const restoreGpuTimer = () => { metrics.reset(); gpuTimer.restore(); };
+    const gpuTimer = createGpuTimer(renderer.getContext() as WebGL2RenderingContext, metrics);
+    const restoreGpuTimer = () => { metrics.reset(); gpuTimer.restore(); studio.target.dispose();studio.target=createReflections();modelLayer.setEnvironment(studio.target.texture);runtimeRef.current?.meshes.forEach(mesh=>{const body=mesh.material[1] as THREE.MeshPhysicalMaterial;body.envMap=studio.target.texture;body.needsUpdate=true;}); };
     renderer.domElement.addEventListener("webglcontextrestored", restoreGpuTimer);
 
     const createSurface = (name: string) => {
@@ -253,22 +290,24 @@ export default function ThreeSimulation(props: Props) {
       host.appendChild(element);
       return element;
     };
+    const meshes = new Map<string, SliceObject>();
+    const updateTopology = () => {
+      let triangles = 0;
+      for (const mesh of [...meshes.values(), ...modelLayer.meshes.values()]) triangles += (mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position")?.count ?? 0) / 3;
+      metrics.setSceneTriangles(triangles);
+    };
+    updateTopology();
+    // Only scene surfaces set zoom distance; floor, grid and gizmos do not.
+    const zoomObjects = () => [...meshes.values(), ...modelLayer.meshes.values()];
     const perspectiveSurface = createSurface("Perspective");
-    const { controls, transform } = createViewportControls(camera, perspectiveSurface, props.transformSpace);
+    const { controls, transform } = createViewportControls(camera, perspectiveSurface, props.transformSpace, zoomObjects);
 
     scene.add(new THREE.HemisphereLight(0xdce9e5, 0x20262b, 1.7));
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.1);
     keyLight.position.set(8, 14, 10);
     scene.add(keyLight);
-    // The floor is physical world geometry: fixed dimensions, fixed grid
-    // spacing and a permanent origin regardless of camera pan or zoom.
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_FLOOR_SIZE_METRES, WORLD_FLOOR_SIZE_METRES), new THREE.MeshStandardMaterial({ color: 0x111518, roughness: 0.95, metalness: 0.05, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4 }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.002;
-    scene.add(floor);
-    const grid = new THREE.GridHelper(WORLD_FLOOR_SIZE_METRES, WORLD_FLOOR_SIZE_METRES / WORLD_GRID_STEP_METRES, 0x405158, 0x242c30);
-    grid.position.y = 0.01;
-    scene.add(grid);
+    const { floor, grid } = createSceneGround(renderer.capabilities.reversedDepthBuffer);
+    scene.add(floor, grid);
     scene.add(new THREE.AxesHelper(1));
 
     const patternTextures = new Map<string, THREE.CanvasTexture>();
@@ -289,16 +328,17 @@ export default function ThreeSimulation(props: Props) {
     for (const name of ["top", "front", "right"] as const) {
       const surface = createSurface(name[0].toUpperCase() + name.slice(1));
       const viewCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 1000);
-      const { controls: orbit, transform: gizmo } = createViewportControls(viewCamera, surface, props.transformSpace);
+      const { controls: orbit, transform: gizmo } = createViewportControls(viewCamera, surface, props.transformSpace, zoomObjects);
       scene.add(gizmo.getHelper());
       views.push({ name, camera: viewCamera, controls: orbit, transform: gizmo, surface, initialized: false });
     }
     let activeView = views[0];
+    if (props.previewOnly) views.forEach(({ transform }) => { transform.enabled = false; });
     views.forEach((view) => view.surface.addEventListener("pointerenter", () => { if (!views.some((item) => item.transform.dragging)) activeView = view; }));
-    const meshes = new Map<string, SliceObject>();
     const updateCameraClipping = () => {
       const bounds = new THREE.Box3();
       meshes.forEach((mesh) => bounds.expandByObject(mesh));
+      bounds.union(modelLayer.bounds());
       const sphere = bounds.isEmpty() ? new THREE.Sphere(controls.target.clone(), 1) : bounds.getBoundingSphere(new THREE.Sphere());
       views.forEach(({ camera, controls }) => {
         const sceneDistance = camera.position.distanceTo(sphere.center);
@@ -312,7 +352,7 @@ export default function ThreeSimulation(props: Props) {
     };
     const fit = () => {
       // Once geometry exists, fit its current world bounds, including moved screens.
-      if (meshes.size) {
+      if (meshes.size || modelLayer.meshes.size) {
         views.forEach((view) => frameView(view));
         return;
       }
@@ -328,7 +368,7 @@ export default function ThreeSimulation(props: Props) {
     };
     const frameView = (view: View, bounds?: THREE.Box3) => {
       const box = bounds || new THREE.Box3();
-      if (!bounds) meshes.forEach((mesh) => { if (mesh.visible) box.expandByObject(mesh); });
+      if (!bounds) { meshes.forEach((mesh) => { if (mesh.visible) box.expandByObject(mesh); }); box.union(modelLayer.bounds()); }
       const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(0, 0.5, 0), 1) : box.getBoundingSphere(new THREE.Sphere());
       const viewCamera = view.camera;
       const direction = view.name === "top" ? new THREE.Vector3(0, 1, 0) : view.name === "right" ? new THREE.Vector3(1, 0, 0) : view.name === "front" ? new THREE.Vector3(0, 0, 1) : viewCamera.position.clone().sub(view.controls.target).normalize();
@@ -378,6 +418,7 @@ export default function ThreeSimulation(props: Props) {
     const focusSelection = () => {
       const bounds = new THREE.Box3();
       latestRef.current.selectedIds.forEach((id) => { const mesh = meshes.get(id); if (mesh?.visible) bounds.expandByObject(mesh); });
+      if (latestRef.current.modelSelection?.length) bounds.union(modelLayer.bounds(latestRef.current.modelSelection));
       if (!bounds.isEmpty()) frameView(activeView, bounds);
     };
     const renderViews = (width: number, height: number) => {
@@ -390,12 +431,15 @@ export default function ThreeSimulation(props: Props) {
         renderer.setViewport(x, y, view.surface.clientWidth, view.surface.clientHeight);
         renderer.setScissor(x, y, view.surface.clientWidth, view.surface.clientHeight);
         renderer.render(scene, view.camera);
+        const modelMeshes=[...modelLayer.meshes.values()];
+        const selectedModels=new Set(latestRef.current.previewOnly?[]:modelMeshes.filter(mesh=>mesh.visible&&mesh.userData.selected));
+        selectionOutline.render(renderer,view.camera,[...modelMeshes,...meshes.values(),floor],selectedModels,view.surface.clientWidth,view.surface.clientHeight);
       }
       views.forEach((view) => { view.transform.getHelper().visible = !!view.transform.object; });
       renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height);
     };
     const renderScene = () => {
-      if (document.hidden || renderer.getContext().isContextLost()) return;
+      if (latestRef.current.renderPaused || document.hidden || renderer.getContext().isContextLost()) return;
       const start = performance.now();
       const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
       const autoReset = renderer.info.autoReset;
@@ -416,11 +460,26 @@ export default function ThreeSimulation(props: Props) {
       });
     };
 
-    if (props.cameraState) {
-      camera.position.fromArray(props.cameraState.position);
-      controls.target.fromArray(props.cameraState.target);
+    if (initialCamera.current) {
+      camera.position.fromArray(initialCamera.current.position);
+      controls.target.fromArray(initialCamera.current.target);
+      for(const view of views){
+        if(view.name!=="perspective" && view.camera instanceof THREE.OrthographicCamera){
+          const saved=initialCamera.current.orthographic?.[view.name];
+          if(saved && [...saved.position,...saved.target,saved.zoom,saved.halfHeight].every(Number.isFinite) && saved.zoom>0 && saved.halfHeight>0){
+            view.camera.position.fromArray(saved.position);view.controls.target.fromArray(saved.target);
+            view.camera.up.set(0,view.name==="top"?0:1,view.name==="top"?-1:0);
+            view.camera.top=saved.halfHeight;view.camera.bottom=-saved.halfHeight;view.camera.zoom=saved.zoom;view.initialized=true;
+          }
+        }
+        if(view.initialized)view.controls.update();
+      }
     } else fit();
     layoutViews();
+    const snapshotCamera=():CameraState=>({position:tuple(camera.position),target:tuple(controls.target),orthographic:Object.fromEntries(views.filter(view=>view.name!=="perspective"&&view.initialized).map(view=>[view.name,{position:tuple(view.camera.position),target:tuple(view.controls.target),zoom:view.camera.zoom,halfHeight:(view.camera as THREE.OrthographicCamera).top}]))});
+    const rememberCamera=()=>{const state=snapshotCamera();if(props.cameraMemory)props.cameraMemory.current=state;return state;};
+    const publishCamera=()=>latestRef.current.onCameraChange(rememberCamera());
+    let cameraSaveTimer:ReturnType<typeof setTimeout>|undefined;
 
     let frame = 0, dirty = true;
     const onVisibilityChange = () => {
@@ -428,13 +487,18 @@ export default function ThreeSimulation(props: Props) {
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     const render = () => {
+      if (latestRef.current.renderPaused) return;
       frame = requestAnimationFrame(render);
       gpuTimer.poll();
       views.forEach((view) => { if (view.controls.enabled && view.controls.update()) dirty = true; });
       if (dirty) { renderScene(); dirty = false; }
     };
+    const refreshRendering = () => { cancelAnimationFrame(frame); dirty = true; render(); };
     render();
     const resize = () => {
+      // Hidden retained workspaces have no layout box. Keep their GPU targets
+      // and camera aspect intact until the host becomes visible again.
+      if (!host.clientWidth || !host.clientHeight) return;
       const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
       renderer.setSize(width, height, false);
@@ -446,13 +510,24 @@ export default function ThreeSimulation(props: Props) {
     document.addEventListener("fullscreenchange", resize);
     resize();
 
-    const invalidate = () => { updateCameraClipping(); dirty = true; };
+    const invalidate = () => {
+      updateCameraClipping();dirty=true;rememberCamera();
+      // Keep the last drawn pose immediately, but avoid React updates every frame.
+      if(cameraSaveTimer)clearTimeout(cameraSaveTimer);
+      cameraSaveTimer=setTimeout(publishCamera,150);
+    };
     views.forEach((view) => { view.controls.addEventListener("change", invalidate); view.transform.addEventListener("change", () => { dirty = true; }); });
-    controls.addEventListener("end", () => latestRef.current.onCameraChange({ position: tuple(camera.position), target: tuple(controls.target) }));
+    // OrbitControls emits end after every wheel event. Debounce those events
+    // together so scrolling cannot trigger a project update/save per wheel tick.
+    const finishCameraGesture=()=>{if(cameraSaveTimer)clearTimeout(cameraSaveTimer);cameraSaveTimer=setTimeout(publishCamera,150);};
+    views.forEach(view=>view.controls.addEventListener("end",finishCameraGesture));
 
     type PickViewport = { camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; left: number; top: number; width: number; height: number };
-    let pointerStart: { x: number; y: number } | null = null, marqueeStart: { x: number; y: number } | null = null, marqueeViewport: PickViewport | null = null, marqueeMoved = false, selectedOnDown = false;
+    let pointerStart: { x: number; y: number } | null = null, marqueeStart: { x: number; y: number } | null = null, marqueeViewport: PickViewport | null = null, marqueeMoved = false;
     let transformDragging = false, lastTransformPreviewAt = 0;
+    let transformPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+    let modelDrag: { proxy: THREE.Matrix4; matrices: Map<string, THREE.Matrix4>; slices: Map<string, THREE.Matrix4>; coordinateMatrices: Map<string,THREE.Matrix4>; rotations: Record<string,[number,number,number]> } | null = null;
+    const modelDelta = () => { proxy.updateMatrix(); return proxy.matrix.clone().multiply(modelDrag!.proxy.clone().invert()); };
     let shiftPressed = false;
     const rawDragScale = new THREE.Vector3(1, 1, 1);
     let transformStart: {
@@ -475,27 +550,31 @@ export default function ThreeSimulation(props: Props) {
       const rect = renderer.domElement.getBoundingClientRect(), viewport = pickViewportAt(clientX, clientY), x = clientX - rect.left, y = clientY - rect.top;
       pointer.set((x - viewport.left) / viewport.width * 2 - 1, -((y - viewport.top) / viewport.height * 2 - 1));
       raycaster.setFromCamera(pointer, viewport.camera);
-      return raycaster.intersectObjects(Array.from(meshes.values()).filter((mesh) => mesh.visible), false)[0]?.object as SliceObject | undefined;
+      const hit = raycaster.intersectObjects(Array.from(meshes.values()).filter((mesh) => mesh.visible), false)[0];
+      const modelHit = modelLayer.pick(raycaster);
+      if (modelHit && (!hit || modelHit.distance < hit.distance)) return { userData: { sliceId: modelHit.id, modelPick: true } } as unknown as SliceObject;
+      return hit?.object as SliceObject | undefined;
     };
     const setMarquee = (left: number, top: number, width: number, height: number, visible: boolean) => { const element = marqueeRef.current; if (!element) return; Object.assign(element.style, { display: visible ? "block" : "none", left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` }); };
+    let transferGesture=false;
     const onPointerDown = (event: PointerEvent) => {
+      if (latestRef.current.previewOnly) return;
+      if(latestRef.current.transferActive&&event.button===0){transferGesture=true;pointerStart={x:event.clientX,y:event.clientY};host.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();return;}
       shiftPressed = event.shiftKey;
       activeView = views.find((view) => view.surface.contains(event.target as Node)) || activeView;
       const bounds = activeView.surface.getBoundingClientRect();
       // Hit-test handles before selection and navigation receive pointerdown, including touch.
       activeView.transform.pointerHover(new PointerEvent("pointermove", { clientX: (event.clientX - bounds.left) / bounds.width * 2 - 1, clientY: -(event.clientY - bounds.top) / bounds.height * 2 + 1, button: event.button }));
       pointerStart = { x: event.clientX, y: event.clientY };
-      selectedOnDown = false;
       if (activeView.transform.axis && event.button === 0) activeView.controls.enabled = false;
       if (event.button === 0 && event.ctrlKey && !transformDragging && !activeView.transform.axis) {
         const rect = renderer.domElement.getBoundingClientRect();
         marqueeViewport = pickViewportAt(event.clientX, event.clientY);
         marqueeStart = { x: event.clientX - rect.left, y: event.clientY - rect.top }; marqueeMoved = false; activeView.controls.enabled = false;
         setMarquee(marqueeStart.x, marqueeStart.y, 0, 0, true); activeView.surface.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation();
-      } else if (event.button === 0 && !event.shiftKey && !transformDragging && !activeView.transform.axis) {
-        const hit = hitAt(event.clientX, event.clientY);
-        if (hit) { const id = hit.userData.sliceId; selectedOnDown = latestRef.current.selectedIds.length !== 1 || latestRef.current.selectedIds[0] !== id; if (selectedOnDown) latestRef.current.onSelectionChange([id]); }
       }
+      // Selection is resolved on click release. Starting an orbit/pan gesture
+      // must not raycast every triangle or change the selection.
     };
     const onPointerMove = (event: PointerEvent) => {
       setShiftModifier(event.shiftKey);
@@ -506,35 +585,51 @@ export default function ThreeSimulation(props: Props) {
     };
     const selectMarquee = (endX: number, endY: number) => {
       if (!marqueeStart || !marqueeViewport) return;
-      const viewport = marqueeViewport, left = Math.min(marqueeStart.x, endX), right = Math.max(marqueeStart.x, endX), top = Math.min(marqueeStart.y, endY), bottom = Math.max(marqueeStart.y, endY), objects = Array.from(meshes.values()).filter((mesh) => mesh.visible), selected: string[] = [];
-      const firstHitAt = (x: number, y: number) => { pointer.set((x - viewport.left) / viewport.width * 2 - 1, -((y - viewport.top) / viewport.height * 2 - 1)); raycaster.setFromCamera(pointer, viewport.camera); return (raycaster.intersectObjects(objects, false)[0]?.object as SliceObject | undefined)?.userData.sliceId; };
+      const viewport = marqueeViewport, left = Math.min(marqueeStart.x, endX), right = Math.max(marqueeStart.x, endX), top = Math.min(marqueeStart.y, endY), bottom = Math.max(marqueeStart.y, endY);
+      const objects = [...meshes.values(), ...modelLayer.meshes.values()].filter(mesh => mesh.visible), selected: string[] = [], selectedModels: string[] = [];
+      // Both domains participate in occlusion, even when only one is being selected.
+      const firstHitAt = (x: number, y: number) => { pointer.set((x - viewport.left) / viewport.width * 2 - 1, -((y - viewport.top) / viewport.height * 2 - 1)); raycaster.setFromCamera(pointer, viewport.camera); return raycaster.intersectObjects(objects, false)[0]?.object; };
       objects.forEach((mesh) => {
-        mesh.geometry.computeBoundingBox(); const box = mesh.geometry.boundingBox; if (!box) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox(); const box = mesh.geometry.boundingBox; if (!box) return;
         const points = [new THREE.Vector3(box.min.x, box.min.y, box.min.z), new THREE.Vector3(box.max.x, box.min.y, box.min.z), new THREE.Vector3(box.min.x, box.max.y, box.min.z), new THREE.Vector3(box.max.x, box.max.y, box.min.z), new THREE.Vector3(box.min.x, box.min.y, box.max.z), new THREE.Vector3(box.max.x, box.min.y, box.max.z), new THREE.Vector3(box.min.x, box.max.y, box.max.z), new THREE.Vector3(box.max.x, box.max.y, box.max.z)].map((point) => point.applyMatrix4(mesh.matrixWorld).project(viewport.camera));
         const minX = Math.min(...points.map((point) => viewport.left + (point.x + 1) * viewport.width / 2)), maxX = Math.max(...points.map((point) => viewport.left + (point.x + 1) * viewport.width / 2)), minY = Math.min(...points.map((point) => viewport.top + (1 - point.y) * viewport.height / 2)), maxY = Math.max(...points.map((point) => viewport.top + (1 - point.y) * viewport.height / 2));
         const overlapLeft = Math.max(left, minX), overlapRight = Math.min(right, maxX), overlapTop = Math.max(top, minY), overlapBottom = Math.min(bottom, maxY); if (overlapRight < overlapLeft || overlapBottom < overlapTop) return;
         const samples: Array<[number, number]> = [[(overlapLeft + overlapRight) / 2, (overlapTop + overlapBottom) / 2], [overlapLeft + 1, overlapTop + 1], [overlapRight - 1, overlapTop + 1], [overlapLeft + 1, overlapBottom - 1], [overlapRight - 1, overlapBottom - 1]];
-        if (samples.some(([x, y]) => firstHitAt(x, y) === mesh.userData.sliceId)) selected.push(mesh.userData.sliceId);
+        if (samples.some(([x, y]) => firstHitAt(x, y) === mesh)) {
+          if (mesh.userData.modelPickId) selectedModels.push(mesh.userData.modelPickId);
+          else selected.push(mesh.userData.sliceId);
+        }
       });
-      latestRef.current.onSelectionChange(Array.from(new Set([...latestRef.current.selectedIds, ...selected])));
+      // Keep screen and stage-model editing independent, as with the hierarchy.
+      // Without an active selection, a box containing model geometry starts model selection.
+      if (latestRef.current.modelSelection?.length || (!latestRef.current.selectedIds.length && selectedModels.length)) {
+        if (selectedModels.length) latestRef.current.onModelSelection?.([...new Set([...(latestRef.current.modelSelection || []), ...selectedModels])]);
+      } else if (selected.length) latestRef.current.onSelectionChange([...new Set([...latestRef.current.selectedIds, ...selected])]);
     };
     const onPointerUp = (event: PointerEvent) => {
+      if (latestRef.current.previewOnly) return;
+      if(transferGesture&&event.button===0){
+        transferGesture=false;const start=pointerStart;pointerStart=null;if(host.hasPointerCapture(event.pointerId))host.releasePointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
+        if(latestRef.current.transferActive&&start&&Math.hypot(event.clientX-start.x,event.clientY-start.y)<5){const hit=hitAt(event.clientX,event.clientY);if(hit)latestRef.current.onTransferTarget?.({kind:hit.userData.modelPick?"model":"slice",id:hit.userData.sliceId});}
+        return;
+      }
       if (marqueeStart) {
         const rect = renderer.domElement.getBoundingClientRect(), bounds = marqueeViewport || { left: 0, top: 0, width: rect.width, height: rect.height }, endX = THREE.MathUtils.clamp(event.clientX - rect.left, bounds.left, bounds.left + bounds.width), endY = THREE.MathUtils.clamp(event.clientY - rect.top, bounds.top, bounds.top + bounds.height), didMove = marqueeMoved;
         if (didMove) selectMarquee(endX, endY); setMarquee(0, 0, 0, 0, false); marqueeStart = null; marqueeViewport = null; marqueeMoved = false; activeView.controls.enabled = !transformDragging; event.preventDefault(); event.stopPropagation(); if (didMove) { pointerStart = null; return; }
       }
-      if (event.button !== 0 || !pointerStart || transformDragging || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) { pointerStart = null; selectedOnDown = false; return; }
-      if (selectedOnDown) { pointerStart = null; selectedOnDown = false; return; }
+      if (event.button !== 0 || !pointerStart || transformDragging || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) { pointerStart = null; return; }
       pointerStart = null;
       const hit = hitAt(event.clientX, event.clientY);
       const current = latestRef.current.selectedIds;
       if (!hit) { if (!event.ctrlKey && !event.shiftKey) latestRef.current.onSelectionChange([]); return; }
       const id = hit.userData.sliceId;
-      if (event.ctrlKey || event.shiftKey) latestRef.current.onSelectionChange(current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+      if (hit.userData.modelPick) { const selected = latestRef.current.modelSelection || []; latestRef.current.onModelSelection?.(event.ctrlKey || event.shiftKey ? selected.includes(id) ? selected.filter(i=>i!==id) : [...selected,id] : [id],event.ctrlKey || event.metaKey || event.shiftKey); return; }
+      if (event.ctrlKey || event.shiftKey) latestRef.current.onSelectionChange(current.includes(id) ? current.filter((item) => item !== id) : [...current, id],true);
       else latestRef.current.onSelectionChange([id]);
     };
     const onPointerCancel = () => {
-      pointerStart = null; marqueeStart = null; marqueeViewport = null; marqueeMoved = false; selectedOnDown = false;
+      transferGesture=false;
+      pointerStart = null; marqueeStart = null; marqueeViewport = null; marqueeMoved = false;
       setMarquee(0, 0, 0, 0, false);
       // TransformControls does not listen for pointercancel itself. Commit the visible edit once.
       if (activeView.transform.dragging) activeView.transform.pointerUp(new PointerEvent("pointerup", { button: 0 }));
@@ -545,7 +640,30 @@ export default function ThreeSimulation(props: Props) {
     host.addEventListener("pointermove", onPointerMove, true);
     host.addEventListener("pointerup", onPointerUp, true);
 
+    const publishTransformPreview = () => {
+      transformPreviewTimer=null;
+      if(modelDrag)latestRef.current.onModelTransformPreview?.(Array.from(modelDelta().toArray()),{...modelDrag.rotations});
+      else if(transformStart){
+        const preview: Record<string,SliceTransform>={};
+        transformStart.items.forEach((_,id)=>{const mesh=meshes.get(id);if(mesh)preview[id]={position:tuple(mesh.position),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z],scale:tuple(mesh.scale)};});
+        latestRef.current.onTransformPreview(preview);
+      }
+      lastTransformPreviewAt=performance.now();
+    };
+    const scheduleTransformPreview = () => {
+      const remaining=66-(performance.now()-lastTransformPreviewAt);
+      if(remaining<=0){if(transformPreviewTimer)clearTimeout(transformPreviewTimer);publishTransformPreview();}
+      else if(!transformPreviewTimer)transformPreviewTimer=setTimeout(publishTransformPreview,remaining);
+    };
     const beginTransform = () => {
+      if (latestRef.current.previewOnly) return;
+      if (latestRef.current.modelSelection?.length) {
+        const matrices = new Map<string, THREE.Matrix4>(),coordinateMatrices=new Map<string,THREE.Matrix4>(),rotations: Record<string,[number,number,number]>={};
+        for(const model of modelLayer.models){const included=descendants(model,latestRef.current.modelSelection);for(const node of model.nodes)if(included.has(node.id)){const matrix=new THREE.Matrix4().fromArray(node.matrix),q=new THREE.Quaternion();matrix.decompose(new THREE.Vector3(),q,new THREE.Vector3());coordinateMatrices.set(node.id,matrix);rotations[node.id]=continuousRotation(q,node.rotation || [0,0,0]);}}
+        for (const model of modelLayer.models) { const included = descendants(model, latestRef.current.modelSelection); for (const node of model.nodes) { const mesh = modelLayer.meshes.get(node.id); if (mesh?.visible && included.has(node.id) && !inherited(model,node,"locked")) matrices.set(node.id,mesh.matrix.clone()); } }
+        const slices=new Map<string,THREE.Matrix4>();for(const id of latestRef.current.selectedIds){const mesh=meshes.get(id);if(mesh?.visible&&!latestRef.current.lockedIds.includes(id)){mesh.updateMatrix();slices.set(id,mesh.matrix.clone());}}
+        proxy.updateMatrix(); modelDrag = { proxy: proxy.matrix.clone(), matrices,slices,coordinateMatrices,rotations }; return;
+      }
       const items = new Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3; continuousRotation: [number, number, number] }>();
       latestRef.current.selectedIds.forEach((id) => {
         const mesh = meshes.get(id);
@@ -561,6 +679,16 @@ export default function ThreeSimulation(props: Props) {
       rawDragScale.copy(proxy.scale);
     };
     const updateTransform = () => {
+      if (modelDrag) {
+        if (latestRef.current.transformMode === "translate" && latestRef.current.snapEnabled) { const start=new THREE.Vector3().setFromMatrixPosition(modelDrag.proxy);for(const axis of ["x","y","z"] as const)if(Math.abs(proxy.position[axis]-start[axis])>1e-7)proxy.position[axis]=Math.round(proxy.position[axis]); }
+        rawDragScale.copy(proxy.scale);
+        if (latestRef.current.transformMode === "scale" && shiftPressed) { const start=new THREE.Vector3().setFromMatrixScale(modelDrag.proxy),values = proxy.scale.clone().divide(start).toArray(); const value = values.reduce((a,b)=>Math.abs(a-1)>Math.abs(b-1)?a:b,1); proxy.scale.copy(start).multiplyScalar(value); }
+        const delta = modelDelta(); for (const [id,start] of modelDrag.matrices) { const mesh=modelLayer.meshes.get(id)!; mesh.matrix.copy(delta).multiply(start); mesh.matrixWorldNeedsUpdate=true; }
+        for(const [id,start] of modelDrag.slices){const mesh=meshes.get(id);if(mesh){delta.clone().multiply(start).decompose(mesh.position,mesh.quaternion,mesh.scale);mesh.updateMatrixWorld(true);}}
+        for(const [id,start] of modelDrag.coordinateMatrices){const q=new THREE.Quaternion();delta.clone().multiply(start).decompose(new THREE.Vector3(),q,new THREE.Vector3());modelDrag.rotations[id]=continuousRotation(q,modelDrag.rotations[id]);}
+        scheduleTransformPreview();
+        dirty=true; return;
+      }
       if (!transformStart) return;
       if (latestRef.current.transformMode === "translate" && latestRef.current.snapEnabled) {
         for (const axis of ["x", "y", "z"] as const) {
@@ -588,16 +716,12 @@ export default function ThreeSimulation(props: Props) {
         mesh.rotation.set(...start.continuousRotation, "XYZ");
         mesh.scale.copy(start.scale).multiply(deltaScale);
       });
-      const now = performance.now();
-      if (now - lastTransformPreviewAt >= 66) {
-        const preview: Record<string, SliceTransform> = {};
-        transformStart.items.forEach((_, id) => { const mesh = meshes.get(id); if (mesh) preview[id] = { position: tuple(mesh.position), rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z], scale: tuple(mesh.scale) }; });
-        latestRef.current.onTransformPreview(preview);
-        lastTransformPreviewAt = now;
-      }
+      scheduleTransformPreview();
       dirty = true;
     };
     const endTransform = () => {
+      if(transformPreviewTimer){clearTimeout(transformPreviewTimer);transformPreviewTimer=null;}
+      if (modelDrag) { const delta=modelDelta().toArray(),rotations=modelDrag.rotations; modelDrag=null; latestRef.current.onModelTransform?.(delta,rotations); latestRef.current.onModelTransformPreview?.(null); return; }
       if (!transformStart) return;
       const updates: Record<string, SliceTransform> = {};
       transformStart.items.forEach((_, id) => { const mesh = meshes.get(id); if (mesh) updates[id] = { position: tuple(mesh.position), rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z], scale: tuple(mesh.scale) }; });
@@ -609,11 +733,12 @@ export default function ThreeSimulation(props: Props) {
     transform.addEventListener("mouseDown", beginTransform);
     transform.addEventListener("objectChange", updateTransform);
     transform.addEventListener("mouseUp", endTransform);
-    transform.addEventListener("dragging-changed", (event) => { transformDragging = Boolean((event as { value?: boolean }).value); views.forEach((view) => { view.controls.enabled = !transformDragging && view.surface.style.display !== "none"; }); dirty = true; });
+    transform.addEventListener("dragging-changed", (event) => { transformDragging = Boolean((event as { value?: boolean }).value); host.dataset.transformDragging = String(transformDragging); views.forEach((view) => { view.controls.enabled = !transformDragging && view.surface.style.display !== "none"; }); dirty = true; });
     });
     const setShiftModifier = (pressed: boolean) => {
       if (shiftPressed === pressed) return;
       shiftPressed = pressed;
+      if (modelDrag && latestRef.current.transformMode === "scale") { proxy.scale.copy(rawDragScale);lastTransformPreviewAt=0;updateTransform(); }
       if (transformStart && latestRef.current.transformMode === "scale") { proxy.scale.copy(rawDragScale); lastTransformPreviewAt = 0; updateTransform(); }
     };
     const updateRotationSnap = (event: KeyboardEvent) => {
@@ -645,11 +770,13 @@ export default function ThreeSimulation(props: Props) {
         const previousScissor = renderer.getScissor(new THREE.Vector4());
         const previousScissorTest = renderer.getScissorTest();
         const helperVisibility = views.map((view) => view.transform.getHelper().visible);
+        const selectionOutlines=[...meshes.values(),...modelLayer.meshes.values()].flatMap(mesh=>mesh.children.filter(child=>child.userData.selectionOutline&&child.visible));
         const outputCamera = (latestRef.current.viewMode === "four" ? camera : views.find((view) => view.name === latestRef.current.viewMode)!.camera).clone();
         if (outputCamera instanceof THREE.PerspectiveCamera) outputCamera.aspect = width / height;
         else { outputCamera.left = -outputCamera.top * width / height; outputCamera.right = outputCamera.top * width / height; }
         outputCamera.updateProjectionMatrix();
         views.forEach((view) => { view.transform.getHelper().visible = false; });
+        selectionOutlines.forEach(outline=>{outline.visible=false;});
         let readback: Promise<unknown>;
         try {
           renderer.setRenderTarget(outputTarget); renderer.setScissorTest(false); renderer.render(scene, outputCamera);
@@ -661,6 +788,7 @@ export default function ThreeSimulation(props: Props) {
           renderer.setScissor(previousScissor);
           renderer.setScissorTest(previousScissorTest);
           views.forEach((view, index) => { view.transform.getHelper().visible = helperVisibility[index]; });
+          selectionOutlines.forEach(outline=>{outline.visible=true;});
         }
         await readback;
         if (disposed) throw new Error("3D Output stopped because the viewport was closed.");
@@ -673,8 +801,10 @@ export default function ThreeSimulation(props: Props) {
       }
     };
     props.onOutputCaptureReady?.(captureOutput);
-    runtimeRef.current = { fit, focusSelection, setView, render: renderScene, updateClipping: updateCameraClipping, controls, camera, renderer, transforms: views.map((view) => view.transform), proxy, meshes, patternTextures, scene, grid, floor, externalTextures: {} };
+    runtimeRef.current = { fit:()=>{fit();publishCamera();}, focusSelection:()=>{focusSelection();publishCamera();}, setView:mode=>{setView(mode);rememberCamera();}, render: renderScene, refreshRendering, refreshMedia: () => {}, updateClipping: updateCameraClipping, updateTopology, controls, camera, renderer, transforms: views.map((view) => view.transform), proxy, meshes, patternTextures, scene, modelLayer, studio, grid, floor, externalTextures: {} };
     return () => {
+      if(cameraSaveTimer)clearTimeout(cameraSaveTimer);
+      if(transformPreviewTimer)clearTimeout(transformPreviewTimer);
       disposed = true;
       cancelAnimationFrame(frame);
       gpuTimer.dispose();
@@ -686,6 +816,9 @@ export default function ThreeSimulation(props: Props) {
       window.removeEventListener("keydown", updateRotationSnap);
       window.removeEventListener("keyup", updateRotationSnap);
       window.removeEventListener("blur", clearRotationSnap);
+      selectionOutline.dispose();
+      modelLayer.dispose();
+      studio.target.dispose();
       patternTextures.forEach((texture) => texture.dispose());
       meshes.forEach((mesh) => {
         mesh.geometry.dispose();
@@ -712,6 +845,7 @@ export default function ThreeSimulation(props: Props) {
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    if (props.renderPaused && !props.outputActive) return;
     props.slices.forEach((slice) => {
       const texture = runtime.patternTextures.get(slice.id);
       if (!texture) return;
@@ -719,7 +853,7 @@ export default function ThreeSimulation(props: Props) {
       texture.needsUpdate = true;
     });
     runtime.render();
-  }, [props.textureVersion, props.drawPatternTexture, props.slices]);
+  }, [props.textureVersion, props.drawPatternTexture, props.slices, props.renderPaused, props.outputActive]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -753,6 +887,7 @@ export default function ThreeSimulation(props: Props) {
       runtime.externalTextures[kind] = texture;
     });
     const update = () => {
+      if (latestRef.current.renderPaused && !latestRef.current.outputActive) return;
       let changed = false;
       mediaEntries.forEach(([kind, source]) => {
         const active = runtime.externalTextures[kind];
@@ -769,8 +904,11 @@ export default function ThreeSimulation(props: Props) {
       if (changed) runtime.render();
       frame = requestAnimationFrame(update);
     };
+    const refreshMedia = () => { cancelAnimationFrame(frame); update(); };
+    runtime.refreshMedia = refreshMedia;
     update();
     return () => {
+      if (runtime.refreshMedia === refreshMedia) runtime.refreshMedia = () => {};
       cancelAnimationFrame(frame);
       Object.values(runtime.externalTextures).forEach((texture) => texture?.dispose());
       runtime.externalTextures = {};
@@ -803,22 +941,27 @@ export default function ThreeSimulation(props: Props) {
       let mesh = runtime.meshes.get(slice.id);
       if (!mesh) {
         const geometry = createSliceGeometry(slice, localPitchM, depth, curvature, props.compositionWidth, props.compositionHeight, pivot, fullSource, props.interactiveGeometryPreview);
-        const front = new THREE.MeshBasicMaterial({ map: sourceTexture, color: 0xffffff, side: THREE.DoubleSide, toneMapped: false, fog: false, depthTest: true, depthWrite: true }), body = new THREE.MeshStandardMaterial({ color: 0x252a2d, roughness: 0.78, metalness: 0.28, side: THREE.DoubleSide });
+        const front = new THREE.MeshBasicMaterial({ map: sourceTexture || null, color: sourceTexture ? 0xffffff : 0x000000, side: THREE.DoubleSide, toneMapped: false, fog: false, depthTest: true, depthWrite: true }), body = createModelMaterial(DEFAULT_BODY_MATERIAL);
         mesh = new THREE.Mesh(geometry, [front, body]) as unknown as SliceObject; mesh.userData.sliceId = slice.id; mesh.userData.geometryKey = geometryKey;
-        const selected = props.selectedIds.includes(slice.id), edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: selected ? 1 : 0, depthWrite: false })); edges.visible = selected; edges.userData.nonInteractive = true; mesh.add(edges); runtime.scene.add(mesh); runtime.meshes.set(slice.id, mesh);
+        const selected = props.selectedIds.includes(slice.id), edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: selected ? 1 : 0, depthWrite: false })); edges.visible = selected; edges.userData.nonInteractive = true; edges.userData.selectionOutline=true; mesh.add(edges); runtime.scene.add(mesh); runtime.meshes.set(slice.id, mesh);
       } else if (mesh.userData.geometryKey !== geometryKey) {
         const geometry = createSliceGeometry(slice, localPitchM, depth, curvature, props.compositionWidth, props.compositionHeight, pivot, fullSource, props.interactiveGeometryPreview), previousGeometry = mesh.geometry; mesh.geometry = geometry; previousGeometry.dispose(); mesh.userData.geometryKey = geometryKey;
         const edges = mesh.children[0] as THREE.LineSegments<THREE.EdgesGeometry, THREE.LineBasicMaterial> | undefined; if (edges) { edges.geometry.dispose(); edges.geometry = new THREE.EdgesGeometry(geometry, 20); }
       }
       const front = mesh.material[0] as THREE.MeshBasicMaterial; if (front.map !== (sourceTexture || null)) { front.map = sourceTexture || null; front.needsUpdate = true; }
-      front.color.set(0xffffff);
+      // A selected live input without a texture is an opaque black LED face.
+      front.color.set(sourceTexture ? 0xffffff : 0x000000);
+      const body=mesh.material[1] as THREE.MeshPhysicalMaterial;applyBodyMaterial(body,props.bodyAppearanceBySlice?.[slice.id]?.material || DEFAULT_BODY_MATERIAL,props.bodyAppearanceBySlice?.[slice.id]?.style==="wireframe");body.envMap=runtime.studio.target.texture;
       const offset = pivotOffset(pivot, slice.input.width * localPitchM, slice.input.height * localPitchM);
       const saved = props.transforms[slice.id], initialPosition: [number, number, number] = [(slice.input.x + slice.input.width / 2 - props.compositionWidth / 2) * masterPitchM + offset[0], (props.compositionHeight - slice.input.y - slice.input.height / 2) * masterPitchM + offset[1], offset[2]];
       mesh.position.fromArray(saved?.position || initialPosition); mesh.rotation.fromArray([...(saved?.rotation || [0, 0, 0]), "XYZ"]); mesh.scale.fromArray(saved?.scale || [1, 1, 1]); mesh.visible = props.visibleIds.includes(slice.id);
     });
     runtime.updateClipping();
+    runtime.updateTopology();
     runtime.render();
   }, [props.slices, props.compositionWidth, props.compositionHeight, props.masterPitchMm, props.pitchBySlice, props.depthBySlice, props.curvatureBySlice, props.pivotBySlice, props.source, props.sourceOverrides, props.sourceMedia.video, props.sourceMedia.ndi, props.sourceMedia.spout, props.sourceQuality, props.drawPatternTexture, props.interactiveGeometryPreview]);
+
+  useEffect(()=>{const runtime=runtimeRef.current;if(!runtime)return;runtime.meshes.forEach((mesh,id)=>{const body=mesh.material[1] as THREE.MeshPhysicalMaterial;applyBodyMaterial(body,props.bodyAppearanceBySlice?.[id]?.material||DEFAULT_BODY_MATERIAL,props.bodyAppearanceBySlice?.[id]?.style==="wireframe");body.envMap=runtime.studio.target.texture;});runtime.render();},[props.bodyAppearanceBySlice]);
 
   useEffect(() => {
     const runtime = runtimeRef.current; if (!runtime) return;
@@ -839,9 +982,12 @@ export default function ThreeSimulation(props: Props) {
     if (!runtime) return;
     runtime.meshes.forEach((mesh, id) => {
       const edges = mesh.children[0] as THREE.LineSegments<THREE.EdgesGeometry, THREE.LineBasicMaterial> | undefined;
-      if (edges) { const selected = props.selectedIds.includes(id); edges.visible = selected; edges.material.opacity = selected ? 1 : 0; }
+      if (edges) { const selected = !props.previewOnly && props.selectedIds.includes(id); edges.visible = selected; edges.material.opacity = selected ? 1 : 0; }
     });
-    const selected = props.selectedIds.filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[];
+    // Imported selection owns the shared gizmo until it clears. Re-run when that
+    // selection changes so deleting its last item detaches immediately.
+    if (!props.previewOnly && props.modelSelection?.length) return;
+    const selected = (props.previewOnly ? [] : props.selectedIds).filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[];
     if (!selected.length) { runtime.transforms.forEach((transform) => transform.detach()); runtime.render(); return; }
     if (props.selectionTransform) {
       runtime.proxy.position.fromArray(props.selectionTransform.position);
@@ -856,18 +1002,40 @@ export default function ThreeSimulation(props: Props) {
     }
     runtime.transforms.forEach((transform) => transform.attach(runtime.proxy));
     runtime.render();
-  }, [props.selectedIds, props.lockedIds, props.visibleIds, props.transformSpace, props.transforms, props.pivotBySlice, props.selectionTransform]);
+  }, [props.selectedIds, props.lockedIds, props.visibleIds, props.transformSpace, props.transforms, props.pivotBySlice, props.selectionTransform, props.previewOnly, props.modelSelection]);
+
+  useEffect(() => {
+    const runtime=runtimeRef.current; if (!runtime) return;
+    runtime.modelLayer.sync(props.models || [], props.previewOnly ? [] : props.modelSelection || []);
+    runtime.updateTopology();
+    if (!props.previewOnly && props.modelSelection?.length && !runtime.transforms.some(t=>t.dragging)) {
+      const unlocked = (props.models || []).flatMap(model => model.nodes.filter(n=>props.modelSelection!.includes(n.id) && inherited(model,n,"visible") && !inherited(model,n,"locked")).map(n=>n.id));
+      const point=modelSelectionPivot(props.models || [],unlocked);
+      if (!point) runtime.transforms.forEach(t=>t.detach());
+      else { runtime.proxy.position.copy(point); runtime.proxy.rotation.set(0,0,0); runtime.proxy.scale.set(1,1,1); if (props.transformSpace === "local" && unlocked.length === 1) { const node=(props.models || []).flatMap(m=>m.nodes).find(n=>n.id===unlocked[0]); if(node) new THREE.Matrix4().fromArray(node.matrix).decompose(new THREE.Vector3(),runtime.proxy.quaternion,new THREE.Vector3()); } if(props.selectionTransform){runtime.proxy.position.fromArray(props.selectionTransform.position);runtime.proxy.quaternion.setFromEuler(new THREE.Euler(...props.selectionTransform.rotation,"XYZ"));runtime.proxy.scale.fromArray(props.selectionTransform.scale||[1,1,1]);}runtime.transforms.forEach(t=>t.attach(runtime.proxy)); }
+    }
+    runtime.updateClipping(); runtime.render();
+  }, [props.models, props.modelSelection, props.previewOnly, props.transformSpace,props.selectionTransform]);
 
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.meshes.forEach((mesh, id) => { mesh.visible = props.visibleIds.includes(id); }); runtime.render(); }, [props.visibleIds]);
 
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transforms.forEach((transform) => transform.setMode(props.transformMode)); runtime.render(); }, [props.transformMode]);
-  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transforms.forEach((transform) => transform.setSpace(props.transformSpace)); const selected = props.selectedIds.filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[]; if (props.selectionTransform) runtime.proxy.quaternion.setFromEuler(new THREE.Euler(...props.selectionTransform.rotation, "XYZ")); else if (selected.length && props.transformSpace === "local") runtime.proxy.quaternion.copy(selected[selected.length - 1].quaternion); else runtime.proxy.rotation.set(0, 0, 0); runtime.render(); }, [props.transformSpace, props.selectedIds, props.lockedIds, props.visibleIds, props.transforms, props.pivotBySlice, props.selectionTransform]);
+  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transforms.forEach((transform) => transform.setSpace(props.transformSpace)); const selected = props.selectedIds.filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[]; if (props.modelSelection?.length) return; if (props.selectionTransform) runtime.proxy.quaternion.setFromEuler(new THREE.Euler(...props.selectionTransform.rotation, "XYZ")); else if (selected.length && props.transformSpace === "local") runtime.proxy.quaternion.copy(selected[selected.length - 1].quaternion); else runtime.proxy.rotation.set(0, 0, 0); runtime.render(); }, [props.transformSpace, props.selectedIds, props.lockedIds, props.visibleIds, props.transforms, props.pivotBySlice, props.selectionTransform]);
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.grid.visible = props.gridVisible; if (runtime.floor) runtime.floor.visible = props.floorVisible; const level = THREE.MathUtils.clamp(props.backgroundLevel / 100, 0, 2), base = new THREE.Color(0x090b0c), floorColor = new THREE.Color(0x111518); base.multiplyScalar(level); floorColor.multiplyScalar(level); runtime.scene.background = base; if (runtime.floor) runtime.floor.material.color.copy(floorColor); runtime.render(); }, [props.gridVisible, props.floorVisible, props.backgroundLevel]);
-  useEffect(() => { if (props.fitSignal) runtimeRef.current?.fit(); }, [props.fitSignal]);
-  useEffect(() => { if (props.focusSignal) runtimeRef.current?.focusSelection(); }, [props.focusSignal]);
+  useEffect(() => { void runtimeRef.current?.studio.target.select(props.reflectionPreset || 1); }, [props.reflectionPreset]);
+
+  useEffect(() => { if (props.fitSignal!==lastFitSignal.current) { lastFitSignal.current=props.fitSignal;if(props.fitSignal)runtimeRef.current?.fit(); } }, [props.fitSignal]);
+  useEffect(() => { if (props.focusSignal!==lastFocusSignal.current) { lastFocusSignal.current=props.focusSignal;if(props.focusSignal)runtimeRef.current?.focusSelection(); } }, [props.focusSignal]);
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.setView(props.viewMode); runtime.render(); }, [props.viewMode]);
 
-  return <div className="three-view" ref={mountRef} tabIndex={0} role="region" aria-label="3D viewport" data-keyboard-focus="false"
+  useEffect(() => {
+    runtimeRef.current?.refreshRendering();
+    runtimeRef.current?.refreshMedia();
+  }, [props.renderPaused, props.outputActive]);
+
+  useEffect(()=>{const runtime=runtimeRef.current;if(!runtime)return;runtime.transforms.forEach(transform=>{transform.enabled=!props.transferActive;transform.getHelper().visible=!props.transferActive;});runtime.render();},[props.transferActive]);
+
+  return <div data-transfer-active={props.transferActive||undefined} inert={props.renderPaused || undefined} data-render-paused={props.renderPaused || undefined} className="three-view" ref={mountRef} tabIndex={0} role="region" aria-label={props.previewOnly ? "Windowed 3D preview" : "3D viewport"} data-keyboard-focus="false"
     onBlur={(event) => { event.currentTarget.dataset.keyboardFocus = "false"; }}
     onPointerDownCapture={(event) => {
       event.currentTarget.dataset.keyboardFocus = "false";
@@ -876,9 +1044,9 @@ export default function ThreeSimulation(props: Props) {
       // last edited field while the gizmo is receiving the pointer gesture.
       event.preventDefault();
     }}>
-    {!props.slices.length && <div className="three-empty"><strong>Import a Resolume XML map</strong><span>Every slice will appear here as a physically sized 3D screen.</span></div>}
+    {!props.slices.length && !props.models?.length && <div className="three-empty"><strong>Import a Resolume XML map</strong><span>Every slice will appear here as a physically sized 3D screen.</span></div>}
     {props.viewMode === "four" && <div className="three-view-labels" aria-hidden="true"><span>Perspective</span><span>Top</span><span>Front</span><span>Right</span></div>}
     <div ref={marqueeRef} className="three-marquee" aria-hidden="true" />
-    <div className="three-help">{props.viewMode === "perspective" || props.viewMode === "four" ? "Perspective: left drag orbit · " : ""}Axis views: left drag pan · Right drag pan · Wheel zoom to cursor · Ctrl-drag marquee · Ctrl/Shift-click multi-select</div>
+    {!props.previewOnly && <div className="three-help">{props.viewMode === "perspective" || props.viewMode === "four" ? "Perspective: left drag orbit · " : ""}Axis views: left drag pan · Right drag pan · Wheel zoom to cursor · Ctrl-drag marquee · Ctrl/Shift-click multi-select</div>}
   </div>;
 }

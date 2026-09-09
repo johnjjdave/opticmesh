@@ -53,7 +53,9 @@
 .toolList h2,.fill h2,.vSection h2{font:700 10px/14px Geist,Arial,sans-serif;letter-spacing:.08em;margin:0 0 8px}
 .toolList{padding:12px;gap:4px}.toolList button{grid-template-columns:20px minmax(0,1fr);gap:8px}
 .vSection{padding:12px}.vSection :is(button,input,select){font-variant-numeric:tabular-nums}
-.selection strong{font:650 14px/20px Geist,Arial,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inspector{min-width:0;grid-template-columns:minmax(0,1fr)}
+.selection,.inspectorScroll,.vSection{min-width:0}
+.selection strong{min-width:0;max-width:100%;font:650 14px/20px Geist,Arial,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .selection span{font-size:10px;line-height:14px}
 .inspector>nav button{font:700 10px/14px Geist,Arial,sans-serif}
 .layoutSwitch{height:28px}.layoutSwitch button{font:650 11px/16px Geist,Arial,sans-serif;text-transform:none}
@@ -116,3 +118,37 @@
 
 .menus section strong{font-weight:700;color:var(--text-primary)}
 .menus section button{font-weight:500}
+
+/* All scene item types use the same Coordinates fieldset. */
+fieldset.transformFields{border:0;margin:0;padding:0;min-width:0}
+
+.materialCenter{--diagnostic-height:210px}
+.diagnostics>section.materialContent{overflow:auto;align-items:flex-start;padding:12px;scrollbar-width:thin}
+
+.fill > .fillSequence { display:block; margin-top:8px; }
+
+.diagnostics section:has(.performancePanel){overflow-y:auto}
+.performancePanel .gpuMetrics{grid-column:span 2}
+.performancePanel .gpuMetrics small{color:var(--text-muted);font-size:9px}
+
+/* Compact, labelled-through-tooltip viewport actions share the outline icon set. */
+.toolbar .iconButton{width:32px;min-width:32px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+
+.canvasShell{position:relative}
+.canvasShell>.viewportPauseOverlay{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:var(--surface-app);text-align:center}
+.viewportPauseOverlay strong{font-size:20px;line-height:26px;color:var(--text-primary)}
+.viewportPauseOverlay span{color:var(--text-muted);font-size:11px}
+.viewportPauseOverlay button{margin-top:6px;padding:8px 14px;border:1px solid var(--border-control);background:var(--surface-control);color:var(--text-primary);font-size:11px}
+
+.app :global(.hierarchy-row.contains-selection:not(.selected)){background:var(--surface-hover);box-shadow:inset 2px 0 var(--text-secondary)}
+.app :global(.hierarchy-row.contains-selection .hierarchy-name){color:var(--text-primary);font-weight:700}
+.app :global(.hierarchy-row.selected .hierarchy-name){color:var(--text-primary);font-weight:750}
+
+.performancePanel .performanceReading{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+.performancePanel .performanceReading>small{font-size:9px;font-weight:500;color:inherit}
+.performancePanel [data-performance-state="warning"]{color:var(--warning)}
+.performancePanel [data-performance-state="critical"]{color:var(--error)}
+.performancePanel .gpuReadings>div{display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline}
+.performancePanel .gpuReadings>div>span:first-child{color:var(--text-secondary);font-size:9px}
+
+.hdriButtons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:0 0 8px}.hdriButtons button{min-width:0;min-height:30px;padding:0 4px;border:1px solid var(--border-control);background:var(--surface-control);color:var(--text-secondary);font:650 var(--control-size)/1 Geist,Arial,sans-serif}.hdriButtons button:hover{background:var(--surface-hover);color:var(--text-primary)}.hdriButtons button.active{border-color:var(--mint);background:var(--surface-selected);color:var(--text-primary)}

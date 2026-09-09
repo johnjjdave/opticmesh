@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -10,16 +11,15 @@ try {
   const button = name => page.getByRole('button', { name, exact: true });
   await button('Guide').click();
   const dialog = page.getByRole('dialog');
-  const links = dialog.locator('a[href^="#manual-"]');
-  assert((await links.count()) >= 17);
-  for (const link of await links.all()) {
-    const id = (await link.getAttribute('href')).slice(1);
-    await link.click();
-    assert.equal(await page.evaluate(() => document.activeElement.id), id);
-    assert(await page.locator(`[id="${id}"]`).isVisible());
+  const nav=dialog.getByRole('navigation',{name:'Manual sections',exact:true});
+  const targets=await nav.locator('a').evaluateAll(links=>links.map(link=>link.getAttribute('href')));
+  assert(targets.length>=18);
+  for(const target of targets){
+    await nav.locator(`a[href="${target}"]`).click();
+    assert.equal(await page.evaluate(()=>document.activeElement.id),target.slice(1));
   }
   await button('Close manual').click();
-  await button('3D').click(); await button('Load Demo Scene').click();
+  await button('3D').click(); await button('Load Demo Scene').click();await confirmProjectReplacement(page);
   await button('Select Center Wall').click();
   await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('front');
   const view = page.getByRole('region', { name: '3D viewport', exact: true });

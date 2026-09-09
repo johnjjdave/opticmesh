@@ -1,14 +1,20 @@
+import { DEFAULT_BODY_MATERIAL, type BodyAppearance } from "./slice-material";
 import { pivotOffset } from "./slice-pivot";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter.js";
+import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
+import { USDZExporter } from "three/examples/jsm/exporters/USDZExporter.js";
+import { createModelMaterial, nodeMaterial, modelGeometry, modelTriangleCount, inherited, type ImportedModel } from "./model-data";
 import { createSliceGeometry, type SimulationSlice, type SliceCurvature, type SlicePivot, type SliceTransform } from "./three-simulation";
 import { normalizeTransform, type TransformGroup } from "./group-transforms";
 import packageMetadata from "../package.json";
 
-export type SceneExportFormat = "glb" | "gltf" | "obj" | "mvr";
+export type SceneExportFormat = "glb" | "gltf" | "obj" | "mvr" | "stl" | "usdz";
 
 export type SceneExportOptions = {
+  bodyAppearanceBySlice?:Record<string,BodyAppearance>;
+  models?: ImportedModel[];
   projectName: string;
   slices: SimulationSlice[];
   compositionWidth: number;
@@ -81,6 +87,7 @@ function buildScene(options: SceneExportOptions): BuiltScene {
   root.name = "LO2S LED Screens";
   scene.add(root);
 
+
   const textureCanvas = document.createElement("canvas");
   options.drawPatternTexture(textureCanvas);
   const texture = new THREE.CanvasTexture(textureCanvas);
@@ -105,13 +112,6 @@ function buildScene(options: SceneExportOptions): BuiltScene {
     fog: false,
   });
   front.name = "LED_Surface";
-  const body = new THREE.MeshStandardMaterial({
-    color: 0x252a2d,
-    roughness: 0.78,
-    metalness: 0.28,
-    side: THREE.DoubleSide,
-  });
-  body.name = "Screen_Body";
   const masterPitchM = options.masterPitchMm / 1000;
   const meshesBySlice = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.Material[]>>();
   const groupObjects = new Map<string, THREE.Group>();
@@ -138,6 +138,16 @@ function buildScene(options: SceneExportOptions): BuiltScene {
       parent = groupObjects.get(group.parentId);
     if (object && parent && object !== parent) parent.add(object);
   });
+  scene.updateMatrixWorld(true);
+  for (const model of options.models || []) {
+    const objects = new Map<string, THREE.Object3D>();
+    for (const node of model.nodes) {
+      if (!inherited(model,node,"visible")) continue;
+      const object = node.geometry ? new THREE.Mesh(modelGeometry(model.geometries[node.geometry]), createModelMaterial(nodeMaterial(model,node))) : new THREE.Group();
+      object.name = node.name; object.visible = inherited(model,node,"visible"); object.matrixAutoUpdate=false; object.matrix.fromArray(node.matrix); objects.set(node.id,object);
+    }
+    for (const node of model.nodes) { const object=objects.get(node.id); if(!object)continue; const parent=node.parent ? objects.get(node.parent) : null; if(parent) { const parentNode=model.nodes.find(n=>n.id===node.parent)!; object.matrix.premultiply(new THREE.Matrix4().fromArray(parentNode.matrix).invert()); parent.add(object); } else { const owner=node.sceneGroupId?groupObjects.get(node.sceneGroupId):null;if(owner){object.matrix.premultiply(owner.matrixWorld.clone().invert());owner.add(object);}else scene.add(object); } }
+  }
   let triangleCount = 0;
 
   options.slices.forEach((slice) => {
@@ -145,6 +155,7 @@ function buildScene(options: SceneExportOptions): BuiltScene {
     const pivot = options.pivotBySlice[slice.id] || "bottom-center";
     const geometry = createSliceGeometry(slice, localPitchM, options.depthBySlice[slice.id] || 0.01, options.curvatureBySlice[slice.id] || { horizontal: 0, vertical: 0 }, options.compositionWidth, options.compositionHeight, pivot, false);
     triangleCount += geometry.getAttribute("position").count / 3;
+    const body=createModelMaterial(options.bodyAppearanceBySlice?.[slice.id]?.material || DEFAULT_BODY_MATERIAL);
     const mesh = new THREE.Mesh(geometry, [front, body]);
     mesh.name = `${slice.screenName} - ${slice.name}`;
     const offset = pivotOffset(pivot, slice.input.width * localPitchM, slice.input.height * localPitchM);
@@ -404,7 +415,7 @@ async function gltfJsonAndAssets(scene: THREE.Scene, basename: string) {
   const exported = await new GLTFExporter().parseAsync(scene, {
     binary: false,
     onlyVisible: true,
-    trs: true,
+    trs: false,
     includeCustomExtensions: false,
   });
   if (exported instanceof ArrayBuffer) throw new Error("Expected a JSON glTF export.");
@@ -446,18 +457,19 @@ function mvrMatrixText(matrix: THREE.Matrix4) {
 function createMvrXml(options: SceneExportOptions, geometryFilename: string) {
   const layerUuid = deterministicUuid(`lo2s:layer:${options.projectName}`);
   const sceneUuid = deterministicUuid(`lo2s:scene:${options.projectName}`);
+  const contentName = options.models?.length ? "Stage and Screens" : "LED Screens";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <GeneralSceneDescription verMajor="1" verMinor="5" provider="LO2S - OpticMesh" providerVersion="${packageMetadata.version}">
   <UserData><Data provider="LO2S - OpticMesh" ver="${packageMetadata.version}"><SliceCount>${options.slices.length}</SliceCount></Data></UserData>
   <Scene>
     <AUXData/>
     <Layers>
-      <Layer name="LED Screens" uuid="${layerUuid}">
+      <Layer name="${contentName}" uuid="${layerUuid}">
         <ChildList>
-          <SceneObject name="${xmlEscape(options.projectName)} - LED Screens" uuid="${sceneUuid}">
+          <SceneObject name="${xmlEscape(options.projectName)} - ${contentName}" uuid="${sceneUuid}">
             <Matrix>{1,0,0}{0,1,0}{0,0,1}{0,0,0}</Matrix>
             <Geometries><Geometry3D fileName="${xmlEscape(geometryFilename)}"/></Geometries>
-            <Function>LED Screen</Function>
+            <Function>${options.models?.length ? "Stage Reference" : "LED Screen"}</Function>
             <CastShadow>false</CastShadow>
             <FixtureID>${xmlEscape(options.projectName)}</FixtureID>
             <FixtureIDNumeric>1</FixtureIDNumeric>
@@ -480,7 +492,7 @@ async function buildMvrFiles(built: BuiltScene, options: SceneExportOptions, bas
   const exported = await new GLTFExporter().parseAsync(built.scene, {
     binary: true,
     onlyVisible: true,
-    trs: true,
+    trs: false,
     includeCustomExtensions: false,
   });
   if (!(exported instanceof ArrayBuffer)) throw new Error("MVR validation failed: the embedded scene is not a binary GLB.");
@@ -499,15 +511,25 @@ async function buildMvrFiles(built: BuiltScene, options: SceneExportOptions, bas
 }
 
 export async function exportSimulationScene(format: SceneExportFormat, options: SceneExportOptions): Promise<SceneExportResult> {
-  if (!options.slices.length) throw new Error("Import a Resolume XML map before exporting the 3D scene.");
+  if (!options.slices.length && !options.models?.length) throw new Error("Import screens or a 3D model before exporting the scene.");
   const basename = slugify(options.projectName);
   const built = buildScene(options);
+  for (const model of options.models || []) for (const node of model.nodes) if(node.geometry && inherited(model,node,"visible")) { built.triangleCount += modelTriangleCount(model.geometries[node.geometry]); }
   try {
+    if (format === "stl") {
+      built.scene.updateMatrixWorld(true);
+      const data = new STLExporter().parse(built.scene, { binary: true });
+      return { blob: new Blob([new Uint8Array(data.buffer as ArrayBuffer)], { type: "model/stl" }), filename: `${basename}.stl`, mimeType: "model/stl", sliceCount: options.slices.length, triangleCount: built.triangleCount };
+    }
+    if (format === "usdz") {
+      const data = await new USDZExporter().parseAsync(built.scene);
+      return { blob: new Blob([data.slice().buffer as ArrayBuffer], { type: "model/vnd.usdz+zip" }), filename: `${basename}.usdz`, mimeType: "model/vnd.usdz+zip", sliceCount: options.slices.length, triangleCount: built.triangleCount };
+    }
     if (format === "glb") {
       const result = await new GLTFExporter().parseAsync(built.scene, {
         binary: true,
         onlyVisible: true,
-        trs: true,
+        trs: false,
         includeCustomExtensions: false,
       });
       if (!(result instanceof ArrayBuffer)) throw new Error("The GLB exporter did not return binary data.");
@@ -535,8 +557,11 @@ export async function exportSimulationScene(format: SceneExportFormat, options: 
       const obj = new OBJExporter().parse(built.scene);
       const textureBlob = await new Promise<Blob | null>((resolve) => built.textureCanvas.toBlob(resolve, "image/png"));
       if (!textureBlob) throw new Error("Unable to create the exported LED texture.");
-      const mtl = `newmtl LED_Surface\nKa 1.000000 1.000000 1.000000\nKd 1.000000 1.000000 1.000000\nKe 1.000000 1.000000 1.000000\nmap_Kd ${basename}-texture.png\nmap_Ke ${basename}-texture.png\nillum 1\n\nnewmtl Screen_Body\nKa 0.145000 0.165000 0.176000\nKd 0.145000 0.165000 0.176000\nKs 0.080000 0.080000 0.080000\nillum 2\n`;
-      const objWithMtl = `mtllib ${basename}.mtl\n${obj}`;
+      const stageMaterials = new Map<string, THREE.MeshPhysicalMaterial>();
+      built.scene.traverse(object=>{if(object instanceof THREE.Mesh){for(const material of Array.isArray(object.material)?object.material:[object.material])if(material instanceof THREE.MeshPhysicalMaterial && material.name.startsWith("Stage_"))stageMaterials.set(material.name,material);}});
+      const stageMtl=[...stageMaterials.values()].map(m=>`newmtl ${m.name}\nKd ${m.color.toArray().join(" ")}\nKs ${[1,1,1].map(()=>m.specularIntensity*.04).join(" ")}\nNs ${Math.max(0,2/Math.max(.001,m.roughness*m.roughness)-2)}\nPr ${m.roughness}\nPm ${m.metalness}\nillum 2\n\n`).join("");
+      const mtl = `${stageMtl}newmtl LED_Surface\nKa 1.000000 1.000000 1.000000\nKd 1.000000 1.000000 1.000000\nKe 1.000000 1.000000 1.000000\nmap_Kd ${basename}-texture.png\nmap_Ke ${basename}-texture.png\nillum 1\n\nnewmtl Screen_Body\nKa 0.145000 0.165000 0.176000\nKd 0.145000 0.165000 0.176000\nKs 0.080000 0.080000 0.080000\nillum 2\n`;
+      const objWithMtl = `# LO2S - OpticMesh\n# Units: metres (1 OBJ unit = 1 metre). Import with scale 1 and source units metres.\n# Up axis: Y. Unit comments are informational; OBJ has no standard physical-unit field.\nmtllib ${basename}.mtl\n${obj}`;
       const files: ZipEntry[] = [
         { name: `${basename}.obj`, data: encoder.encode(objWithMtl) },
         { name: `${basename}.mtl`, data: encoder.encode(mtl) },
@@ -547,7 +572,7 @@ export async function exportSimulationScene(format: SceneExportFormat, options: 
       ];
       files.push({
         name: "README.txt",
-        data: encoder.encode(`LO2S OBJ export\n\n${basename}.obj contains the complete world-positioned scene with all screen transforms baked into its vertices.\n\nOBJ preserves geometry, UV mapping and world placement, but it has no standard field for editable local pivots or transform nodes. GLB/glTF should be used when the receiving software needs that hierarchy.\n`),
+        data: encoder.encode(`LO2S OBJ export\n\nUnits: metres (1 OBJ unit = 1 metre). Up axis: Y.\nImport with scale 1 and source units metres in the receiving application. OBJ has no standard physical-unit field; the unit comments do not automatically configure an importer. Interpreting these coordinates as millimetres makes the scene 1,000 times too small; centimetres makes it 100 times too small.\n\n${basename}.obj contains the complete world-positioned scene with screen and imported-model transforms baked into its vertices.\n\nOBJ preserves geometry, UV mapping and world placement, but it has no standard field for editable local pivots or transform nodes. GLB/glTF should be used when the receiving software needs that hierarchy.\n`),
       });
       return {
         blob: new Blob([createStoredZip(files)], { type: "application/zip" }),

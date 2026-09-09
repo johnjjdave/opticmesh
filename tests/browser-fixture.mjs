@@ -7,3 +7,9 @@ export async function loadRegressionScene(page, mode = 'map') {
   await page.getByText('Loaded 2 screens and 6 slices', { exact: true }).waitFor();
   if (mode === '3d') await page.getByRole('button', { name: '3D', exact: true }).click();
 }
+
+export async function confirmProjectReplacement(page) {
+  const dialog = page.locator(".project-replacement-dialog");
+  await dialog.getByRole("button", { name: "Continue without saving", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+}

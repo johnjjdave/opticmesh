@@ -1,21 +1,35 @@
 "use client";
 
+import { reflectionPreset, type ReflectionPreset } from "./studio-environment";
+import { ProjectEncoder, ProjectSnapshotTracker, type ProjectPatch } from "./project-encoder";
+
+import { orderedSceneModelIds, selectModelHierarchyRange, moveModelNodes, promoteModelGroup, ungroupModels, sceneGroupModelIds, transformSceneGroupModels, modelsWithGroupState } from "./model-hierarchy";
+import * as THREE from "three";
 import FieldStepper from "./field-stepper";
 import UiIcon, { toolIcon } from "./ui-icon";
 import ManualDialog from "./manual-dialog";
+import projectLimits from "../desktop/project-limits.json";
+import ProjectReplacementDialog, {type ProjectSaveOutcome} from "./project-replacement-dialog";
+import {transferDelta,type TransferFrame} from "./transfer-transform";
 import PerformancePanel from "./performance-panel";
+import WindowedOutput from "./windowed-output";
+import { ModelImportDialog, ModelHierarchy } from "./model-controls";
+import { modelSelectionBounds, descendants, inherited, modelCoordinateItems, editModelCoordinate, resetModelCoordinates, modelPivotEntries, setModelPivots, transformModels, removeModelNodes, validateModels, type ImportedModel } from "./model-data";
 import { RenderPerformance } from "./render-performance";
 import NumericInput from "./numeric-input";
 import PivotPad from "./pivot-pad";
 import { PIVOT_LABELS, PIVOT_PRESETS, pivotOffset, pivotKey, pivotLabel, reanchorTransform, type PivotPreset } from "./slice-pivot";
 
 import ResetSlider from "./reset-slider";
+import ModelMaterialPanel from "./model-material-panel";
+import { DEFAULT_BODY_MATERIAL, resolveBodyAppearance, validateBodyAppearances, type BodyAppearance } from "./slice-material";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import ThreeSimulation, { type CameraState, type SimulationOutputCapture, type SimulationSource, type SimulationView, type SliceCurvature, type SlicePivot, type SliceTransform, type TransformMode } from "./three-simulation";
+import { RetainedWorkspace } from "./retained-workspace";
+import ThreeSimulation, { createSliceGeometry, type CameraState, type SimulationOutputCapture, type SimulationSource, type SimulationView, type SliceCurvature, type SlicePivot, type SliceTransform, type TransformMode } from "./three-simulation";
 import { exportSimulationScene, type SceneExportFormat } from "./scene-export";
 import { choosePhysicalLayoutAnchor, commonSelectionValue, resolvePhysicalLayout } from "./physical-layout";
-import { canParentGroup, continuousEuler, groupAncestorIds, groupDescendantSliceIds, groupTransformFromMovedChild, groupTransformFromWorldBounds, groupWorldTransform, localToWorldTransform, migrateTransformGroup, normalizeTransform, placeTransformGroup, worldToLocalTransform, type TransformGroup } from "./group-transforms";
+import { releaseSceneGroups, reanchorGroup, matrixTransform, transformMatrix, canParentGroup, continuousEuler, groupAncestorIds, groupDescendantSliceIds, groupTransformFromMovedChild, groupTransformFromWorldBounds, groupWorldTransform, localToWorldTransform, migrateTransformGroup, normalizeTransform, placeTransformGroup, worldToLocalTransform, type TransformGroup } from "./group-transforms";
 import { buildXmlValidations } from "./xml-validation";
 import { cubemapAtlasDimensions, cubemapFacePlacements, cubemapFaceUvToDirection, cubemapLayoutSize, directionFromAzimuthElevation, directionToCubemapFaceUv, type CubemapFaceKey, type CubemapLayout, type Vector3 } from "./cubemap";
 import packageMetadata from "../package.json";
@@ -199,6 +213,8 @@ type ResolumeMap = {
 type SliceOverride = Partial<Pick<PatternConfig, "cabinetWidth" | "cabinetHeight" | "pixelPitchMm" | "checkerColorA" | "checkerColorB" | "metricGridColor" | "diagonalColor" | "circleColor" | "safeAreaColor" | "lineWidth" | "showCheckerboard" | "showPixelGrid" | "showLabels" | "showDiagonals" | "showCircles" | "showSafeArea" | "labelNameScale" | "labelDataScale" | "infoOrientation" | "namePosition" | "coordinatesPosition" | "resolutionPosition" | "aspectPosition" | "physicalSizePosition" | "showCenterDot" | "centerDotColor" | "centerDotSize">> & { logoScale?: number; logoVisible?: boolean; logoPosition?: LogoPosition };
 type SceneGroup = TransformGroup;
 type SimulationSnapshot = {
+  bodyAppearances?:Record<string,BodyAppearance>;
+  models: ImportedModel[];
   transforms: Record<string, SliceTransform>;
   depthM: number;
   curvature: SliceCurvature;
@@ -213,6 +229,7 @@ type SimulationSnapshot = {
   snapEnabled: boolean;
   floorVisible: boolean;
   backgroundLevel: number;
+  reflectionPreset: ReflectionPreset;
   visibility: Record<string, boolean>;
   locks: Record<string, boolean>;
   localNames: Record<string, string>;
@@ -319,6 +336,7 @@ type DesktopBridge = {
   }>;
   overwriteProject: (projectPath: string, data: ArrayBuffer) => Promise<DesktopProjectResult>;
   openProject: () => Promise<DesktopProjectResult>;
+  autosaveProjectDelta?: (patch: ProjectPatch) => Promise<DesktopProjectResult>;
   autosaveProject: (data: ArrayBuffer) => Promise<DesktopProjectResult>;
   autosaveProjectSync: (data: ArrayBuffer) => DesktopProjectResult;
   loadStartupProject: () => Promise<DesktopProjectResult>;
@@ -495,7 +513,11 @@ function patternStyleFromConfig(config: PatternConfig): PatternStyle {
   };
 }
 
-const DISPLAY_VERSION = packageMetadata.version.replace(/^v/i, "").replace(/-beta.*$/i, "");
+// Local iteration identifies the active milestone without changing release metadata.
+const LOCAL_PREVIEW = process.env.NODE_ENV === "development";
+const DISPLAY_VERSION = LOCAL_PREVIEW ? "0.8.0" : packageMetadata.version.replace(/^v/i, "").replace(/-beta.*$/i, "");
+const BUILD_BADGE = "Beta";
+const BUILD_DESCRIPTION = LOCAL_PREVIEW ? "Local development preview" : "Beta";
 const TransformSelectionScope = createContext("");
 
 const PATTERNS: Array<{ id: PatternType; name: string; code: string }> = [
@@ -2155,7 +2177,7 @@ function ToolList({ title, items, styles, query = "" }: { title: string; items: 
     ? items
     : items.filter(([label]) => label.toLocaleLowerCase().includes(normalizedQuery));
   if (!visibleItems.length) return null;
-  return <section className={styles.toolList}><h2>{title}</h2>{visibleItems.map(([label, active, action, disabled]) => <button aria-pressed={["Arrange", "Selection", "View"].includes(title) && label !== "All Views" ? undefined : active} className={active ? styles.active : ""} disabled={disabled} onClick={action} key={label}><UiIcon name={toolIcon(label)} /><span>{label}</span></button>)}</section>;
+  return <section className={styles.toolList}><h2>{title}</h2>{visibleItems.map(([label, active, action, disabled]) => <button aria-pressed={["Arrange", "Selection", "View"].includes(title) && label !== "All Views" && label !== "Transfer" ? undefined : active} className={active ? styles.active : ""} disabled={disabled} title={label==="Transfer"?"Select one unlocked slice, model or group, then pick a target to match its centre and orientation. Escape cancels.":undefined} onClick={action} key={label}><UiIcon name={toolIcon(label)} /><span>{label}</span></button>)}</section>;
 }
 
 function VSection({ title, styles, children, query = "", keywords = [], id }: { title: string; styles: Record<string, string>; children: React.ReactNode; query?: string; keywords?: string[]; id?: string }) {
@@ -2173,14 +2195,28 @@ function PatternsModeIcon() {
 }
 
 function PixelMapModeIcon() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" /><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16" /></svg>;
+  // Resolume Arena silhouette from its official press asset, using the rail palette.
+  return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path transform="translate(3 4.08) scale(.036) translate(-321.912 -250.423)" vectorEffect="non-scaling-stroke" d="M550.477,250.423c-29.215,0-62.727.733-85.925,4.4-15.468,2.2-23.2,8.07-28.356,24.209-37.81,115.175-73.9,233.284-103.971,349.189-6.876,26.41-10.313,36.681-10.313,43.284,0,9.535,6.874,15.4,22.339,16.872q25.78,2.2,64.448,2.2h8.592c2.07,0,4.137-.015,6.2-.03,2.6.015,5.229.03,7.928.03h8.592c19.764,0,39.528-.736,55.853-2.2,13.747-1.468,18.9-5.135,21.48-18.34,2.58-13.938,6.017-33.011,9.454-48.417h90.228c3.439,15.406,6.874,34.479,9.454,48.417,2.578,13.205,7.733,16.872,21.483,18.34,16.325,1.466,36.089,2.2,55.85,2.2H712.4c2.7,0,5.323-.015,7.928-.03,2.065.015,4.133.03,6.2.03h8.592q38.667,0,64.448-2.2c15.465-1.468,22.339-7.337,22.339-16.872,0-6.6-3.437-16.875-10.31-43.284-30.074-115.905-66.163-234.014-103.971-349.189-5.155-16.139-12.891-22.007-28.356-24.209-23.2-3.67-56.712-4.4-85.927-4.4Zm-6.495,280.968c8.679-41.6,18.39-87.108,27.93-127.734,9.543,40.625,19.254,86.135,27.93,127.734Z" /></svg>;
 }
-
 function ThreeDModeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></svg>;
 }
 
 export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v070" } = {}) {
+  const [importedModels, setImportedModels] = useState<ImportedModel[]>([]);
+  const [transferSource,setTransferSource]=useState<{kind:"slice"|"model"|"group";id:string}|null>(null);
+  const [modelSelection, setModelSelection] = useState<string[]>([]);
+  const [modelExpanded,setModelExpanded]=useState<Set<string>>(()=>new Set());
+  const [hierarchyReveal,setHierarchyReveal]=useState<{id:string;serial:number}|null>(null);
+  const hierarchyTreeRef=useRef<HTMLDivElement>(null);
+
+  const [modelTransformPreview, setModelTransformPreview] = useState<number[] | null>(null);
+  const [modelRotationPreview,setModelRotationPreview]=useState<Record<string,[number,number,number]>>({});
+  const [modelImportOpen, setModelImportOpen] = useState(false);
+  const [windowedOutputOpen, setWindowedOutputOpen] = useState(false);
+  const [mainViewportPaused, setMainViewportPaused] = useState(false);
+  const pauseMainViewport = windowedOutputOpen && mainViewportPaused;
+  if (!windowedOutputOpen && mainViewportPaused) setMainViewportPaused(false);
   const [config, setConfig] = useState(DEFAULT_CONFIG),
     [patternStyle, setPatternStyle] = useState(DEFAULT_PATTERN_STYLE),
     [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("patterns"),
@@ -2221,16 +2257,32 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     [simulationGridVisible, setSimulationGridVisible] = useState(true),
     [simulationSnapEnabled, setSimulationSnapEnabled] = useState(false),
     [simulationFloorVisible, setSimulationFloorVisible] = useState(true),
-    [simulationBackgroundLevel, setSimulationBackgroundLevel] = useState(100);
+    [simulationBackgroundLevel, setSimulationBackgroundLevel] = useState(100),
+    [simulationReflectionPreset, setSimulationReflectionPreset] = useState<ReflectionPreset>(1);
+  const simulationCameraMemory=useRef<CameraState | undefined>(undefined);
+  const cameraAutosaveRequest=useRef<(() => void) | null>(null);
+  const publishSimulationCamera=useCallback((camera:CameraState)=>{simulationCameraMemory.current=camera;cameraAutosaveRequest.current?.();},[]);
+  const [simulationCameraSession,setSimulationCameraSession]=useState(0);
   const [simulationVisibility, setSimulationVisibility] = useState<Record<string, boolean>>({}),
     [simulationLocks, setSimulationLocks] = useState<Record<string, boolean>>({}),
     [simulationLocalNames, setSimulationLocalNames] = useState<Record<string, string>>({}),
-    [simulationGroups, setSimulationGroups] = useState<SceneGroup[]>([]),
+    [simulationGroups, setSimulationGroupsState] = useState<SceneGroup[]>([]),
     [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]),
     [hierarchyQuery, setHierarchyQuery] = useState("");
+  const sceneGroupsRef=useRef<SceneGroup[]>([]);
+  const replaceSimulationGroups=useCallback((groups:SceneGroup[])=>{sceneGroupsRef.current=groups;setSimulationGroupsState(groups);},[]);
+  const setSimulationGroups=useCallback((action:React.SetStateAction<SceneGroup[]>)=>{
+    const before=sceneGroupsRef.current;
+    const requested=typeof action==="function"?action(before):action;
+    const next=requested.map(g=>{const old=before.find(p=>p.id===g.id);return old&&(old.locked||groupAncestorIds(old.id,before).some(id=>before.find(p=>p.id===id)?.locked))?{...g,transform:old.transform}:g;});
+    setImportedModels(models=>transformSceneGroupModels(models,before,next));replaceSimulationGroups(next);
+  },[replaceSimulationGroups]);
+  const [groupModelPreview,setGroupModelPreview]=useState<number[]|null>(null);
+  const [editingGroupName,setEditingGroupName]=useState("");
+  const editingGroupRef=useRef<string|null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null),
     [hierarchyDrag, setHierarchyDrag] = useState<{
-      kind: "group" | "slice";
+      kind: "group" | "slice" | "model";
       id: string;
     } | null>(null),
     [hierarchyDrop, setHierarchyDrop] = useState<{
@@ -2258,24 +2310,26 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     [patternCalibration, setPatternCalibration] = useState<PatternCalibration>("none");
   const [fullscreenMode, setFullscreenMode] = useState<FullscreenMode>("fit"),
     [sequenceActive, setSequenceActive] = useState(false),
-    [notice, setNotice] = useState(""),
+    [mapSequenceActive, setMapSequenceActive] = useState(false),
     [availableUpdate, setAvailableUpdate] = useState<DesktopUpdate | null>(null),
     [calculatorSources, setCalculatorSources] = useState<[CalculatorGroup, CalculatorGroup]>(["physical", "pitch"]);
+  const [notice, setNotice] = useState("");
   const [startupRestoreReady, setStartupRestoreReady] = useState(false),
     [startupProjectStatus, setStartupProjectStatus] = useState("Preparing autosave…");
+  const [pendingReplacement,setPendingReplacement]=useState<"new"|"demo-scene"|"demo-map"|null>(null);
   const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [helpTopic, setHelpTopic] = useState<"manual" | "shortcuts" | null>(null);
   const [compilingProject, setCompilingProject] = useState(false);
   const compileInFlight = useRef(false);
   const [renderMetrics] = useState(() => ({ patterns: new RenderPerformance(), resolume: new RenderPerformance(), simulation: new RenderPerformance() }));
-  const [arrangeNavigation, setArrangeNavigation] = useState<{ section: "align" | "distribute" } | null>(null);
-  const handledArrangeNavigation = useRef<typeof arrangeNavigation>(null);
   const [v070InspectorTab, setV070InspectorTab] = useState<"setup" | "overlays" | "logo" | "scene" | "source" | "geometry" | "information" | "appearance" | "export">("setup"),
     [v070Menu, setV070Menu] = useState<string | null>(null),
     [v070ToolQuery, setV070ToolQuery] = useState(""),
-    [v070DiagnosticTab, setV070DiagnosticTab] = useState<"validation" | "changes" | "output" | "performance">("validation"),
+    [v070DiagnosticTab, setV070DiagnosticTab] = useState<"material" | "validation" | "changes" | "output" | "performance">("validation"),
     [v070Focused, setV070Focused] = useState(false),
     [v070DiagnosticsOpen, setV070DiagnosticsOpen] = useState(true);
+  if(workspaceMode!=="simulation" && v070DiagnosticTab==="material")setV070DiagnosticTab("validation");
+  const [simulationBodyAppearances,setSimulationBodyAppearances]=useState<Record<string,BodyAppearance>>({});
   const [zoom, setZoom] = useState(1),
     [pan, setPan] = useState({ x: 0, y: 0 }),
     [spaceDown, setSpaceDown] = useState(false),
@@ -2323,7 +2377,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     patternOutputPushRef = useRef<() => Promise<void>>(async () => {}),
     patternOutputReadyRef = useRef(false),
     hierarchySelectionAnchorRef = useRef<string | null>(null),
-    hierarchyGroupSelectionAnchorRef = useRef<string | null>(null);
+    hierarchyGroupSelectionAnchorRef = useRef<string | null>(null),
+    hierarchyModelSelectionAnchorRef = useRef<string | null>(null);
   const undoHistoryRef = useRef<HistoryEntry[]>([]),
     redoHistoryRef = useRef<HistoryEntry[]>([]);
   const [historyState, setHistoryState] = useState<{
@@ -2338,7 +2393,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   }, [notice]);
 
   const allSlices = useMemo(() => resolumeMap?.screens.flatMap((screen) => screen.slices) || [], [resolumeMap]),
-    activeScreen = resolumeMap?.screens[selectedScreen] || null,
+    activeScreenIndex = Number.isInteger(selectedScreen) && resolumeMap?.screens[selectedScreen] ? selectedScreen : 0,
+    activeScreen = resolumeMap?.screens[activeScreenIndex] || null,
     activeSlices = workspaceMode === "simulation" || mapView === "input" ? allSlices : activeScreen?.slices || [];
   const groupedSliceIds = useMemo(() => new Set(simulationGroups.flatMap((group) => group.sliceIds)), [simulationGroups]);
   const hierarchyOrderedSliceIds = useMemo(() => {
@@ -2387,6 +2443,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   );
   const patternRenderConfig = useMemo<PatternConfig>(() => ({ ...config, ...patternStyle }), [config, patternStyle]);
   const patternDimensions = useMemo(() => projectionDimensions(config), [config]);
+  const emptyPixelMap = workspaceMode === "resolume" && !resolumeMap;
   const outputWidth = (workspaceMode === "resolume" || workspaceMode === "simulation") && resolumeMap ? (workspaceMode === "simulation" || mapView === "input" ? resolumeMap.compositionWidth : activeScreen?.width || 1) : workspaceMode === "patterns" ? patternDimensions.width : config.resolutionWidth,
     outputHeight = (workspaceMode === "resolume" || workspaceMode === "simulation") && resolumeMap ? (workspaceMode === "simulation" || mapView === "input" ? resolumeMap.compositionHeight : activeScreen?.height || 1) : workspaceMode === "patterns" ? patternDimensions.height : config.resolutionHeight;
   const fitScale = Math.max(0.001, Math.min(Math.max(1, stageBounds.width - 28) / outputWidth, Math.max(1, stageBounds.height - 28) / outputHeight)),
@@ -2427,9 +2484,9 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   const simulationSourceMedia = useMemo<Partial<Record<"video" | "ndi" | "spout", HTMLVideoElement | HTMLCanvasElement>>>(() => {
     const media: Partial<Record<"video" | "ndi" | "spout", HTMLVideoElement | HTMLCanvasElement>> = {};
     if (simulationSourceVideo) media.video = simulationSourceVideo;
-    if (simulationNativeCanvas && simulationNativeKind) media[simulationNativeKind] = simulationNativeCanvas;
+    if (simulationNativeConnected && simulationNativeCanvas && simulationNativeKind) media[simulationNativeKind] = simulationNativeCanvas;
     return media;
-  }, [simulationNativeCanvas, simulationNativeKind, simulationSourceVideo]);
+  }, [simulationNativeCanvas, simulationNativeConnected, simulationNativeKind, simulationSourceVideo]);
   const selectedAutomaticColors = selectedSlices.length === 1 ? automaticSliceColors(selectedSlices[0], config) : { colorA: config.checkerColorA, colorB: config.checkerColorB };
   // XML pivot positions and physical slice geometry must use the same scale.
   // Deriving the exact pitch from the panel's integer raster also avoids
@@ -2610,6 +2667,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     () =>
       selectedTransformGroups.map((group) => {
         const selectedWorld = groupWorldById.get(group.id) || group.transform;
+        if(groupModelPreview){const world=matrixTransform(new THREE.Matrix4().fromArray(groupModelPreview).multiply(transformMatrix(selectedWorld)));const parent=group.parentId?groupWorldById.get(group.parentId):null;return parent?worldToLocalTransform(parent,world):world;}
         if (!simulationTransformPreview) return group.transform;
         const referenceId = groupDescendantSliceIds(group.id, simulationGroups).find((id) => simulationTransformPreview[id] && renderedSimulationTransforms[id]);
         if (!referenceId) return group.transform;
@@ -2621,13 +2679,50 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         const parentWorld = group.parentId ? groupWorldById.get(group.parentId) : null;
         return parentWorld ? worldToLocalTransform(parentWorld, previewWorld, expectedLocalRotation) : { ...previewWorld, rotation: continuousEuler(previewWorld.rotation, expectedLocalRotation) };
       }),
-    [groupWorldById, renderedSimulationTransforms, selectedTransformGroups, simulationGroups, simulationTransformPreview],
+    [groupModelPreview,groupWorldById, renderedSimulationTransforms, selectedTransformGroups, simulationGroups, simulationTransformPreview],
   );
   const selectedGroupSelectionWorldTransform = useMemo(
     () => (selectedTransformGroups.length === 1 ? groupWorldById.get(selectedTransformGroups[0].id) || selectedTransformGroups[0].transform : selectedTransformGroups.length > 1 ? groupTransformForSliceIds(selectedGroupSliceIds) : undefined),
     [groupTransformForSliceIds, groupWorldById, selectedGroupSliceIds, selectedTransformGroups],
   );
+  const selectedSceneModelIds=useMemo(()=>sceneGroupModelIds(importedModels,simulationGroups,selectedGroupIds),[importedModels,simulationGroups,selectedGroupIds]);
+  const effectiveModels=useMemo(()=>modelsWithGroupState(importedModels,simulationGroups,simulationBodyAppearances),[importedModels,simulationGroups,simulationBodyAppearances]);
+  const renderedModels=useMemo(()=>{
+    let models=effectiveModels;
+    if(simulationTransformPreview&&!groupModelPreview){const previewGroups=simulationGroups.map(g=>{const at=selectedTransformGroups.findIndex(selected=>selected.id===g.id);return at<0?g:{...g,transform:selectedGroupDisplayTransforms[at]};});models=transformSceneGroupModels(models,simulationGroups,previewGroups);}
+    if(groupModelPreview)models=transformModels(models,selectedSceneModelIds,groupModelPreview);
+    return modelTransformPreview?transformModels(models,modelSelection,modelTransformPreview,modelRotationPreview):models;
+  },[effectiveModels,simulationGroups,simulationTransformPreview,selectedTransformGroups,selectedGroupDisplayTransforms,groupModelPreview,selectedSceneModelIds,modelTransformPreview,modelSelection,modelRotationPreview]);
+  const hierarchySelectionPath=useMemo(()=>{
+    const models=new Set<string>(),groups=new Set<string>(),groupById=new Map(simulationGroups.map(g=>[g.id,g]));
+    const addGroups=(id:string|null|undefined)=>{while(id&&!groups.has(id)){groups.add(id);id=groupById.get(id)?.parentId;}};
+    for(const model of importedModels){const byId=new Map(model.nodes.map(n=>[n.id,n]));for(const id of modelSelection){const node=byId.get(id);if(!node)continue;let parent=node.parent;while(parent&&!models.has(parent)){models.add(parent);parent=byId.get(parent)?.parent||null;}addGroups(model.nodes[0].sceneGroupId);}}
+    for(const id of selectedGroupIds)addGroups(groupById.get(id)?.parentId);
+    for(const id of selectedSliceIds)addGroups(groupBySliceId.get(id)?.id);
+    return {models,groups};
+  },[importedModels,simulationGroups,modelSelection,selectedGroupIds,selectedSliceIds,groupBySliceId]);
+  const revealHierarchySelection=useCallback(()=>{
+    const id=modelSelection.at(-1)||selectedGroupIds.at(-1)||selectedSliceIds.at(-1);if(!id)return;
+    setHierarchyQuery("");setV070InspectorTab("scene");
+    setModelExpanded(current=>new Set([...current,...hierarchySelectionPath.models]));
+    setSimulationGroups(current=>current.map(g=>hierarchySelectionPath.groups.has(g.id)&&!g.expanded?{...g,expanded:true}:g));
+    setHierarchyReveal(current=>({id,serial:(current?.serial||0)+1}));
+  },[modelSelection,selectedGroupIds,selectedSliceIds,hierarchySelectionPath,setSimulationGroups]);
+  useEffect(()=>{
+    if(!hierarchyReveal || workspaceMode!=="simulation")return;
+    const frame=requestAnimationFrame(()=>{
+      const scroller=hierarchyTreeRef.current;
+      const row=Array.from(scroller?.querySelectorAll<HTMLElement>("[data-hierarchy-id]")||[]).find(e=>e.dataset.hierarchyId===hierarchyReveal.id);
+      if(scroller&&row&&!row.closest('.model-tree')){scroller.scrollTop+=row.getBoundingClientRect().top-scroller.getBoundingClientRect().top-(scroller.clientHeight-row.offsetHeight)/2;setHierarchyReveal(current=>current===hierarchyReveal?null:current);}
+    });return()=>cancelAnimationFrame(frame);
+  },[hierarchyReveal,workspaceMode,v070InspectorTab]);
+  const selectedModelCoordinates=useMemo(()=>modelCoordinateItems(renderedModels,modelSelection),[renderedModels,modelSelection]);
+  const commonModelCoordinate=useCallback((field:"position"|"rotation"|"scale")=>[0,1,2].map(axis=>{
+    const first=selectedModelCoordinates[0]?.[field][axis];if(first===undefined)return null;
+    return selectedModelCoordinates.every(item=>Math.abs(item[field][axis]-first)<1e-6) ? field==="rotation" ? THREE.MathUtils.radToDeg(first) : first : null;
+  }) as [number|null,number|null,number|null],[selectedModelCoordinates]);
   const selectedTransformPosition = useMemo<[number | null, number | null, number | null] | null>(() => {
+    if(modelSelection.length)return commonModelCoordinate("position");
     if (selectedGroupDisplayTransforms.length) {
       return [0, 1, 2].map((axis) => {
         const first = selectedGroupDisplayTransforms[0].position[axis];
@@ -2640,8 +2735,9 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       const first = transforms[0].position[axis];
       return transforms.every((transform) => Math.abs(transform.position[axis] - first) < 0.00001) ? first : null;
     }) as [number | null, number | null, number | null];
-  }, [effectiveSimulationTransform, selectedGroupDisplayTransforms, selectedSlices]);
+  }, [modelSelection,commonModelCoordinate,effectiveSimulationTransform, selectedGroupDisplayTransforms, selectedSlices]);
   const selectedTransformRotation = useMemo<[number | null, number | null, number | null] | null>(() => {
+    if(modelSelection.length)return commonModelCoordinate("rotation");
     if (selectedGroupDisplayTransforms.length) {
       return [0, 1, 2].map((axis) => {
         const first = (selectedGroupDisplayTransforms[0].rotation[axis] * 180) / Math.PI;
@@ -2654,15 +2750,16 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       const first = (transforms[0].rotation[axis] * 180) / Math.PI;
       return transforms.every((transform) => Math.abs((transform.rotation[axis] * 180) / Math.PI - first) < 0.001) ? first : null;
     }) as [number | null, number | null, number | null];
-  }, [effectiveSimulationTransform, selectedGroupDisplayTransforms, selectedSlices]);
+  }, [modelSelection,commonModelCoordinate,effectiveSimulationTransform, selectedGroupDisplayTransforms, selectedSlices]);
   const selectedTransformScale = useMemo<[number | null, number | null, number | null] | null>(() => {
+    if(modelSelection.length)return commonModelCoordinate("scale");
     const transforms = selectedGroupDisplayTransforms.length ? selectedGroupDisplayTransforms : selectedSlices.map(effectiveSimulationTransform);
     if (!transforms.length) return null;
     return [0, 1, 2].map((axis) => {
       const first = normalizeTransform(transforms[0]).scale![axis];
       return transforms.every((transform) => Math.abs(normalizeTransform(transform).scale![axis] - first) < 0.00001) ? first : null;
     }) as [number | null, number | null, number | null];
-  }, [effectiveSimulationTransform, selectedGroupDisplayTransforms, selectedSlices]);
+  }, [modelSelection,commonModelCoordinate,effectiveSimulationTransform, selectedGroupDisplayTransforms, selectedSlices]);
   const selectedSimulationPivot = useMemo<SlicePivot | "mixed">(() => {
     if (!selectedSlices.length) return simulationPivot;
     const pivots = selectedSlices.map((slice) => simulationPivotBySlice[slice.id] || simulationPivot);
@@ -2705,6 +2802,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
 
   const captureSimulationSnapshot = useCallback(
     (): SimulationSnapshot => ({
+      models: importedModels,
+      bodyAppearances:simulationBodyAppearances,
       transforms: structuredClone(simulationTransforms),
       depthM: simulationDepthM,
       curvature: { ...simulationCurvature },
@@ -2718,16 +2817,18 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       gridVisible: simulationGridVisible,
       snapEnabled: simulationSnapEnabled,
       floorVisible: simulationFloorVisible,
-      backgroundLevel: simulationBackgroundLevel,
+      backgroundLevel: simulationBackgroundLevel, reflectionPreset: simulationReflectionPreset,
       visibility: structuredClone(simulationVisibility),
       locks: structuredClone(simulationLocks),
       localNames: structuredClone(simulationLocalNames),
       groups: structuredClone(simulationGroups),
     }),
-    [simulationBackgroundLevel, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTransformSpace, simulationTransforms, simulationVisibility],
+    [simulationReflectionPreset, simulationBodyAppearances, importedModels, simulationBackgroundLevel, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTransformSpace, simulationTransforms, simulationVisibility],
   );
   const restoreSimulationSnapshot = useCallback((snapshot: SimulationSnapshot) => {
+    setSimulationBodyAppearances(snapshot.bodyAppearances||{});
     setSimulationTransformPreview(null);
+    setImportedModels(snapshot.models || []); setModelSelection([]);setModelTransformPreview(null);
     setSimulationTransforms(structuredClone(snapshot.transforms));
     setSimulationDepthM(clamp(snapshot.depthM, 0.01, 0.5));
     setSimulationCurvature(normalizeCurvature(snapshot.curvature));
@@ -2742,10 +2843,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     setSimulationSnapEnabled(snapshot.snapEnabled ?? false);
     setSimulationFloorVisible(snapshot.floorVisible ?? true);
     setSimulationBackgroundLevel(snapshot.backgroundLevel);
+    setSimulationReflectionPreset(reflectionPreset(snapshot.reflectionPreset));
     setSimulationVisibility(structuredClone(snapshot.visibility || {}));
     setSimulationLocks(structuredClone(snapshot.locks || {}));
     setSimulationLocalNames(structuredClone(snapshot.localNames || {}));
-    setSimulationGroups((snapshot.groups || []).map(migrateTransformGroup));
+    replaceSimulationGroups((snapshot.groups || []).map(migrateTransformGroup));setGroupModelPreview(null);setSelectedGroupIds([]);
   }, []);
   const refreshHistoryState = useCallback(
     () =>
@@ -2767,6 +2869,73 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     },
     [captureSimulationSnapshot, refreshHistoryState],
   );
+  const changeModels = (models: ImportedModel[], label: string) => { recordSimulationHistory(label); setImportedModels(models); setModelTransformPreview(null); };
+  const selectModels = (ids: string[], additive=false) => { hierarchyModelSelectionAnchorRef.current=null; setModelTransformPreview(null);setModelSelection(ids); if(!additive){setSelectedSliceIds([]);setSelectedGroupIds([]);} setSimulationTransformPreview(null); };
+  const hierarchyOrderedModelIds=useMemo(()=>orderedSceneModelIds(importedModels,simulationGroups,modelExpanded,hierarchyQuery),[importedModels,simulationGroups,modelExpanded,hierarchyQuery]);
+  const selectHierarchyModel=(id:string,modifiers:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean})=>{
+    const result=selectModelHierarchyRange(modelSelection,id,hierarchyModelSelectionAnchorRef.current,hierarchyOrderedModelIds,modifiers);
+    selectModels(result.ids,modifiers.ctrlKey||modifiers.metaKey);
+    hierarchyModelSelectionAnchorRef.current=result.anchor;
+  };
+  // Shared groups can own both LED slices and imported geometry.
+  const modelProps = { models: renderedModels, modelSelection:hasGroupSelection?selectedSceneModelIds:modelSelection, onModelSelection: selectModels,
+    onModelTransformPreview: (delta:number[]|null,rotations?:Record<string,[number,number,number]>)=>{
+      if(hasGroupSelection){setGroupModelPreview(delta);setSimulationTransformPreview(delta?Object.fromEntries(selectedGroupSliceIds.filter(id=>!simulationLockedIds.includes(id)).map(id=>[id,matrixTransform(new THREE.Matrix4().fromArray(delta).multiply(transformMatrix(renderedSimulationTransforms[id])))])):null);return;}setModelRotationPreview(rotations || {});setModelTransformPreview(delta);
+    },
+    onModelTransform: (delta:number[],rotations?:Record<string,[number,number,number]>)=>{
+      if(hasGroupSelection){recordSimulationHistory("Transform group selection");const change=new THREE.Matrix4().fromArray(delta);setSimulationGroups(current=>current.map(g=>{
+        if(!selectedTransformGroups.some(selected=>selected.id===g.id) || g.locked || groupAncestorIds(g.id,current).some(id=>current.find(p=>p.id===id)?.locked))return g;
+        const world=matrixTransform(change.clone().multiply(transformMatrix(groupWorldTransform(g.id,current))));const parent=g.parentId?groupWorldTransform(g.parentId,current):null;return {...g,transform:parent?worldToLocalTransform(parent,world):world};}));return;}
+      changeModels(transformModels(importedModels,modelSelection.filter(id=>!modelIsLocked(id)),delta,rotations),"Transform model selection");
+      if(selectedSliceIds.length){const change=new THREE.Matrix4().fromArray(delta);setSimulationTransforms(current=>({...current,...Object.fromEntries(selectedSliceIds.filter(id=>!simulationLockedIds.includes(id)).map(id=>{const world=matrixTransform(change.clone().multiply(transformMatrix(renderedSimulationTransforms[id]))),group=groupBySliceId.get(id);return [id,group?worldToLocalTransform(groupWorldById.get(group.id) || group.transform,world):world];}))}));}
+    }
+  };
+
+  const modelIsLocked=(id:string)=>effectiveModels.some(m=>m.nodes.some(n=>n.id===id&&inherited(m,n,"locked")));
+  const modelControls = { models: importedModels, selected: modelSelection, onRowSelect:selectHierarchyModel, onChange: changeModels, expanded:modelExpanded, ancestorIds:hierarchySelectionPath.models,reveal:hierarchyReveal,onRevealHandled:(serial:number)=>setHierarchyReveal(current=>current?.serial===serial?null:current), dragging:!!hierarchyDrag, isLocked:modelIsLocked,
+    onDragStart:(id:string)=>setHierarchyDrag({kind:"model",id}),onDragEnd:()=>{setHierarchyDrag(null);setHierarchyDrop(null);},onDropItem:(id:string,placement:"before"|"inside"|"after")=>dropOnModel(id,placement), onToggle:(id:string)=>setModelExpanded(old=>{const next=new Set(old);if(next.has(id))next.delete(id);else next.add(id);return next;}) };
+  const simulationBodyBySlice=useMemo(()=>Object.fromEntries(allSlices.map(slice=>[slice.id,resolveBodyAppearance(slice.id,simulationGroups,simulationBodyAppearances)])),[allSlices,simulationGroups,simulationBodyAppearances]);
+  const bodyMaterialModel=useMemo<ImportedModel>(()=>({id:"led-extrusions",name:"LED extrusions",format:"internal",hierarchy:true,geometries:{},triangles:0,warnings:[],nodes:[
+    {id:"__body_root",name:"LED extrusions",parent:null,matrix:new THREE.Matrix4().toArray(),visible:true,locked:false,material:{...DEFAULT_BODY_MATERIAL}},
+    ...simulationGroups.map(g=>({id:g.id,name:g.name,parent:g.parentId||"__body_root",matrix:new THREE.Matrix4().toArray(),visible:g.visible,locked:g.locked,...simulationBodyAppearances[g.id]})),
+    ...allSlices.map(slice=>({id:slice.id,name:`${slice.name} · Extrusion`,parent:simulationGroups.find(g=>g.sliceIds.includes(slice.id))?.id||"__body_root",matrix:new THREE.Matrix4().toArray(),visible:true,locked:!!simulationLocks[slice.id],...simulationBodyAppearances[slice.id]}))
+  ]}),[allSlices,simulationGroups,simulationBodyAppearances,simulationLocks]);
+  const materialSelection=[...modelSelection,...(selectedGroupIds.length?selectedGroupIds:selectedSliceIds)];
+  const materialHasModels=!!(modelSelection.length||selectedSceneModelIds.length);
+  const materialHasBodies=!!selectedSliceIds.length;
+  const previewSceneMaterials=(models:ImportedModel[])=>{
+    const body=models.find(model=>model.id===bodyMaterialModel.id)!;
+    const appearances=Object.fromEntries(body.nodes.filter(n=>n.id!=="__body_root"&&(n.material||n.style)).map(n=>[n.id,{material:n.material,style:n.style}]));
+    setSimulationBodyAppearances(current=>Object.keys(current).length===Object.keys(appearances).length&&Object.entries(appearances).every(([id,value])=>current[id]?.material===value.material&&current[id]?.style===value.style)?current:appearances);
+    const edited=new Map(models.filter(model=>model.id!==bodyMaterialModel.id).flatMap(model=>model.nodes.map(node=>[node.id,node] as const)));
+    // Write only editable appearance fields; computed parent materials/locks stay transient.
+    setImportedModels(current=>current.map(model=>{
+      let changed=false;
+      const nodes=model.nodes.map(node=>{const next=edited.get(node.id);if(!next||next.material===node.material&&next.style===node.style)return node;changed=true;return {...node,material:next.material,style:next.style};});
+      return changed?{...model,nodes}:model;
+    }));
+    setModelTransformPreview(null);
+  };
+  const deleteSelectedSceneItems = useCallback(() => {
+    if(hasGroupSelection){
+      try{
+        const released=releaseSceneGroups(simulationGroups,selectedGroupIds,simulationTransforms,renderedSimulationTransforms,true);
+        const targets=sceneGroupModelIds(importedModels,simulationGroups,released.removedIds);
+        if(effectiveModels.some(model=>{const branch=descendants(model,targets);return model.nodes.some(node=>branch.has(node.id)&&inherited(model,node,"locked"));}))throw new Error("Unlock the imported branches before removing their groups.");
+        recordSimulationHistory("Remove selected groups");
+        setImportedModels(transformSceneGroupModels(removeModelNodes(importedModels,targets),simulationGroups,released.groups,false));
+        replaceSimulationGroups(released.groups);setSimulationTransforms(released.transforms);
+        setSelectedGroupIds([]);setModelSelection([]);setSelectedSliceIds(released.returnedSliceIds);
+        setModelTransformPreview(null);setGroupModelPreview(null);setSimulationTransformPreview(null);
+        if(released.returnedSliceIds.length)setNotice("Resolume slices returned to their original screen containers; scene placement preserved");
+      }catch(error){setNotice((error as Error).message);}return;
+    }
+    if(!modelSelection.length)return;
+    const next=removeModelNodes(importedModels,modelSelection.filter(id=>!modelIsLocked(id)));
+    if(next.length===importedModels.length&&next.every((model,i)=>model===importedModels[i]))return;
+    recordSimulationHistory("Remove model items");setImportedModels(next);setModelTransformPreview(null);
+    const remaining=new Set(next.flatMap(model=>model.nodes.map(node=>node.id)));setModelSelection(modelSelection.filter(id=>remaining.has(id)));
+  },[hasGroupSelection,selectedGroupIds,simulationGroups,simulationTransforms,renderedSimulationTransforms,effectiveModels,importedModels,modelSelection,recordSimulationHistory,replaceSimulationGroups]);
   const undoSimulation = useCallback(() => {
     const entry = undoHistoryRef.current.pop();
     if (!entry) return;
@@ -2777,7 +2946,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     restoreSimulationSnapshot(entry.state);
     refreshHistoryState();
     setNotice(`Undid ${entry.label}`);
-  }, [captureSimulationSnapshot, refreshHistoryState, restoreSimulationSnapshot]);
+  }, [captureSimulationSnapshot, refreshHistoryState, restoreSimulationSnapshot, setNotice]);
   const redoSimulation = useCallback(() => {
     const entry = redoHistoryRef.current.pop();
     if (!entry) return;
@@ -2788,24 +2957,94 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     restoreSimulationSnapshot(entry.state);
     refreshHistoryState();
     setNotice(`Redid ${entry.label}`);
-  }, [captureSimulationSnapshot, refreshHistoryState, restoreSimulationSnapshot]);
+  }, [captureSimulationSnapshot, refreshHistoryState, restoreSimulationSnapshot, setNotice]);
+  const importedPivotEntries = useMemo(()=>modelPivotEntries(effectiveModels,modelSelection),[effectiveModels,modelSelection]);
+  const groupPivotEntries = useMemo(()=>selectedTransformGroups.map(group=>{
+    const inverse=transformMatrix(groupWorldById.get(group.id) || group.transform).invert(), bounds=new THREE.Box3();
+    const ids=groupDescendantSliceIds(group.id,simulationGroups);
+    for(const id of ids){
+      const slice=allSlices.find(s=>s.id===id); if(!slice)continue;
+      const geometry=createSliceGeometry(slice,(simulationPitchBySlice[id] || simulationMasterPitchMm)/1000,simulationDepthBySlice[id] || simulationDepthM,simulationCurvatureBySlice[id] || {horizontal:0,vertical:0},resolumeMap?.compositionWidth || config.resolutionWidth,resolumeMap?.compositionHeight || config.resolutionHeight,simulationPivotBySlice[id] || simulationPivot);
+      geometry.computeBoundingBox(); if(geometry.boundingBox)bounds.union(geometry.boundingBox.clone().applyMatrix4(inverse.clone().multiply(transformMatrix(renderedSimulationTransforms[id]))));geometry.dispose();
+    }
+    bounds.union(modelSelectionBounds(effectiveModels,sceneGroupModelIds(effectiveModels,simulationGroups,[group.id]),inverse));
+    const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),offset=center.clone().negate().toArray() as [number,number,number];
+    const mode=group.pivotMode || "center";
+    const pivot: SlicePivot=mode!=="custom" && pivotOffset(mode,size.x,size.y).every((v,i)=>Math.abs(v-offset[i])<1e-7) ? mode : {custom:offset};
+    const locked=group.locked || groupAncestorIds(group.id,simulationGroups).some(id=>simulationGroups.find(g=>g.id===id)?.locked) || (ids.length>0 && ids.every(id=>simulationLockedIds.includes(id)) && !sceneGroupModelIds(effectiveModels,simulationGroups,[group.id]).length);
+    return {id:group.id,center,width:size.x,height:size.y,pivot,disabled:locked || bounds.isEmpty() || Math.abs(inverse.determinant()) < 1e-12};
+  }),[effectiveModels,selectedTransformGroups,groupWorldById,simulationGroups,allSlices,simulationPitchBySlice,simulationMasterPitchMm,simulationDepthBySlice,simulationDepthM,simulationCurvatureBySlice,resolumeMap,config.resolutionWidth,config.resolutionHeight,simulationPivotBySlice,simulationPivot,renderedSimulationTransforms,simulationLockedIds]);
+  const transferCandidate=hasGroupSelection?(selectedTransformGroups.length===1?{kind:"group" as const,id:selectedTransformGroups[0].id}:null):modelSelection.length+selectedSliceIds.length===1?(modelSelection.length?{kind:"model" as const,id:modelSelection[0]}:{kind:"slice" as const,id:selectedSliceIds[0]}):null;
+  const transferCandidateKey=transferCandidate?`${transferCandidate.kind}:${transferCandidate.id}`:"";
+  const transferAllowed=!!transferCandidate && !pauseMainViewport && (transferCandidate.kind==="slice"?!simulationLockedIds.includes(transferCandidate.id)&&simulationVisibleIds.includes(transferCandidate.id):transferCandidate.kind==="model"?!!importedPivotEntries.find(e=>e.id===transferCandidate.id&&!e.disabled&&e.hasVisibleGeometry)&&!effectiveModels.some(m=>{const ids=descendants(m,[transferCandidate.id]);return m.nodes.some(n=>ids.has(n.id)&&inherited(m,n,"locked"));}):!groupPivotEntries.find(e=>e.id===transferCandidate.id)?.disabled && !selectedGroupSliceIds.some(id=>simulationLockedIds.includes(id)) && !selectedSceneModelIds.some(modelIsLocked));
+  const transferContext=JSON.stringify([transferCandidateKey,workspaceMode,simulationTool,pauseMainViewport,pendingReplacement]);
+  const [previousTransferContext,setPreviousTransferContext]=useState(transferContext);
+  if(previousTransferContext!==transferContext){setPreviousTransferContext(transferContext);if(transferSource)setTransferSource(null);}
+  if(!transferAllowed&&transferSource)setTransferSource(null);
+  useEffect(()=>{const cancel=(event:KeyboardEvent)=>{if(event.key==="Escape"){setTransferSource(null);}};window.addEventListener("keydown",cancel);return()=>window.removeEventListener("keydown",cancel);},[]);
+  const transferFrame=(item:{kind:"slice"|"model"|"group";id:string}):TransferFrame=>{
+    if(item.kind==="model"){
+      const entry=modelPivotEntries(effectiveModels,[item.id])[0];
+      if(!entry||!entry.hasVisibleGeometry)throw new Error("Choose a visible object with geometry.");
+      return {matrix:entry.frame,center:entry.center};
+    }
+    if(item.kind==="group"){
+      const entry=groupPivotEntries.find(e=>e.id===item.id),world=groupWorldById.get(item.id);
+      if(!entry||entry.disabled||!world)throw new Error("Choose an unlocked group with geometry.");
+      return {matrix:transformMatrix(world),center:entry.center};
+    }
+    const slice=allSlices.find(s=>s.id===item.id);if(!slice)throw new Error("Choose a screen slice.");
+    const geometry=createSliceGeometry(slice,(simulationPitchBySlice[item.id]||simulationMasterPitchMm)/1000,simulationDepthBySlice[item.id]??simulationDepthM,simulationCurvatureBySlice[item.id]||{horizontal:0,vertical:0},resolumeMap?.compositionWidth||config.resolutionWidth,resolumeMap?.compositionHeight||config.resolutionHeight,simulationPivotBySlice[item.id]||simulationPivot);
+    try{geometry.computeBoundingBox();if(!geometry.boundingBox||geometry.boundingBox.isEmpty())throw new Error("Choose a slice with geometry.");return {matrix:transformMatrix(renderedSimulationTransforms[item.id]),center:geometry.boundingBox.getCenter(new THREE.Vector3())};}finally{geometry.dispose();}
+  };
+  const transferToTarget=(target:{kind:"slice"|"model";id:string})=>{
+    if(!transferSource||!transferAllowed)return;
+    const source=transferSource;
+    if(source.kind===target.kind&&source.id===target.id)return;
+    if(source.kind==="group"&&(selectedGroupSliceIds.includes(target.id)||selectedSceneModelIds.includes(target.id)))return;
+    if(source.kind==="model"&&effectiveModels.some(m=>descendants(m,[source.id]).has(target.id)))return;
+    try{
+      const delta=transferDelta(transferFrame(source),transferFrame(target));
+      recordSimulationHistory("Transfer position and orientation");
+      if(source.kind==="group")setSimulationGroups(current=>current.map(group=>{
+        if(group.id!==source.id)return group;
+        const world=matrixTransform(delta.clone().multiply(transformMatrix(groupWorldTransform(group.id,current))));
+        return {...group,transform:group.parentId?worldToLocalTransform(groupWorldTransform(group.parentId,current),world):world};
+      }));
+      else if(source.kind==="model")setImportedModels(transformModels(importedModels,[source.id],delta.toArray()));
+      else setSimulationTransforms(current=>{const world=matrixTransform(delta.clone().multiply(transformMatrix(renderedSimulationTransforms[source.id]))),group=groupBySliceId.get(source.id);return {...current,[source.id]:group?worldToLocalTransform(groupWorldById.get(group.id)||group.transform,world):world};});
+      setModelTransformPreview(null);setSimulationTransformPreview(null);setTransferSource(null);
+    }catch(error){setNotice(error instanceof Error?error.message:"Unable to transfer the selection");}
+  };
   const pivotEditorValues = useMemo(() => {
-    const entries = selectedSlices.length ? selectedSlices.map((slice) => {
+    const entries = modelSelection.length ? importedPivotEntries : hasGroupSelection ? groupPivotEntries : selectedSlices.length ? selectedSlices.map((slice) => {
       const pitch = (simulationPitchBySlice[slice.id] || simulationMasterPitchMm) / 1000;
       return { pivot: simulationPivotBySlice[slice.id] || simulationPivot, width: slice.input.width * pitch, height: slice.input.height * pitch };
     }) : [{ pivot: simulationPivot, width: config.resolutionWidth * simulationMasterPitchMm / 1000, height: config.resolutionHeight * simulationMasterPitchMm / 1000 }];
+    if(!entries.length)return {values:[null,null,null],point:null,mode:"center"};
     const offsets = entries.map(({ pivot, width, height }) => pivotOffset(pivot, width, height));
     const values = [0, 1, 2].map((axis) => offsets.every((v) => Math.abs(v[axis] - offsets[0][axis]) < 1e-8) ? offsets[0][axis] : null);
     const points = offsets.map((v, i) => [0.5 + v[0] / Math.max(0.0001, entries[i].width), 0.5 - v[1] / Math.max(0.0001, entries[i].height)]);
     const point = points.every((v) => v.every((n, axis) => Math.abs(n - points[0][axis]) < 1e-8)) ? points[0] as [number, number] : null;
     const modes = entries.map(({ pivot }) => typeof pivot === "string" ? pivot : "custom");
     return { values, point, mode: modes.every((mode) => mode === modes[0]) ? modes[0] : "mixed" };
-  }, [selectedSlices, simulationPivot, simulationPivotBySlice, simulationPitchBySlice, simulationMasterPitchMm, config.resolutionWidth, config.resolutionHeight]);
-  const pivotEditingDisabled = !selectedSlices.length || hasGroupSelection || selectedSlices.every((slice) => simulationLockedIds.includes(slice.id));
+  }, [modelSelection,importedPivotEntries,hasGroupSelection,groupPivotEntries,selectedSlices, simulationPivot, simulationPivotBySlice, simulationPitchBySlice, simulationMasterPitchMm, config.resolutionWidth, config.resolutionHeight]);
+  const pivotEditingDisabled = modelSelection.length ? !importedPivotEntries.some(e=>!e.disabled) : hasGroupSelection ? !groupPivotEntries.some(e=>!e.disabled) : !selectedSlices.length || selectedSlices.every((slice) => simulationLockedIds.includes(slice.id));
   const changeSimulationPivot = useCallback(
     (nextValue: SlicePivot | ((previous: SlicePivot, width: number, height: number) => SlicePivot)) => {
       if (pivotEditingDisabled) return;
       const nextFor = (previous: SlicePivot, width: number, height: number) => typeof nextValue === "function" ? nextValue(previous, width, height) : nextValue;
+      if(modelSelection.length){
+        recordSimulationHistory("Change model pivots");setImportedModels(setModelPivots(importedModels,modelSelection.filter(id=>!modelIsLocked(id)),nextValue));setModelTransformPreview(null);return;
+      }
+      if(hasGroupSelection){
+        let groups=simulationGroups,transforms=Object.fromEntries(allSlices.map(slice=>[slice.id,simulationTransforms[slice.id] || initialSimulationTransform(slice)]));
+        for(const entry of groupPivotEntries.filter(e=>!e.disabled)){
+          const value=nextFor(entry.pivot,entry.width,entry.height),point=entry.center.clone().add(new THREE.Vector3(...pivotOffset(value,entry.width,entry.height))).toArray() as [number,number,number];
+          ({groups,transforms}=reanchorGroup(groups,transforms,entry.id,point,typeof value === "string" ? value : "custom"));
+        }
+        recordSimulationHistory("Change group pivots");replaceSimulationGroups(groups);setSimulationTransforms(transforms);setSimulationTransformPreview(null);return;
+      }
       const targets = selectedSlices.filter((slice) => !simulationLockedIds.includes(slice.id));
       const updates = targets.map((slice) => {
         const previous = simulationPivotBySlice[slice.id] || simulationPivot, pitch = (simulationPitchBySlice[slice.id] || simulationMasterPitchMm) / 1000;
@@ -2828,7 +3067,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return next;
       });
     },
-    [pivotEditingDisabled, initialSimulationTransformForPivot, recordSimulationHistory, selectedSlices, simulationMasterPitchMm, simulationPitchBySlice, simulationPivot, simulationPivotBySlice, simulationLockedIds],
+    [effectiveModels,modelSelection,importedModels,hasGroupSelection,simulationGroups,allSlices,simulationTransforms,initialSimulationTransform,groupPivotEntries,pivotEditingDisabled, initialSimulationTransformForPivot, recordSimulationHistory, selectedSlices, simulationMasterPitchMm, simulationPitchBySlice, simulationPivot, simulationPivotBySlice, simulationLockedIds],
   );
   const applySimulationCurvature = useCallback(
     (axis: keyof SliceCurvature, value: number) => {
@@ -2861,6 +3100,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   );
   const updateManualPosition = useCallback(
     (axis: 0 | 1 | 2, value: number) => {
+      if(modelSelection.length){recordSimulationHistory("Set position for model selection");setImportedModels(editModelCoordinate(importedModels,modelSelection.filter(id=>!modelIsLocked(id)),"position",axis,value));setModelTransformPreview(null);return;}
       if (selectedTransformGroups.length) {
         const ids = new Set(selectedTransformGroups.map((group) => group.id));
         recordSimulationHistory(`Set position for ${ids.size} group${ids.size === 1 ? "" : "s"}`);
@@ -2888,10 +3128,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return next;
       });
     },
-    [groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
+    [effectiveModels,importedModels,modelSelection,groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
   );
   const updateManualRotation = useCallback(
     (axis: 0 | 1 | 2, degrees: number) => {
+      if(modelSelection.length){recordSimulationHistory("Set rotation for model selection");setImportedModels(editModelCoordinate(importedModels,modelSelection.filter(id=>!modelIsLocked(id)),"rotation",axis,degrees));setModelTransformPreview(null);return;}
       if (selectedTransformGroups.length) {
         const ids = new Set(selectedTransformGroups.map((group) => group.id));
         recordSimulationHistory(`Set rotation for ${ids.size} group${ids.size === 1 ? "" : "s"}`);
@@ -2919,10 +3160,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return next;
       });
     },
-    [groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
+    [effectiveModels,importedModels,modelSelection,groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
   );
   const updateManualScale = useCallback(
     (axis: 0 | 1 | 2, value: number) => {
+      if(modelSelection.length){recordSimulationHistory("Set scale for model selection");setImportedModels(editModelCoordinate(importedModels,modelSelection.filter(id=>!modelIsLocked(id)),"scale",axis,value));setModelTransformPreview(null);return;}
       const safeValue = clamp(value, 0.001, 1000);
       if (selectedTransformGroups.length) {
         const ids = new Set(selectedTransformGroups.map((group) => group.id));
@@ -2949,9 +3191,10 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return next;
       });
     },
-    [groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
+    [effectiveModels,importedModels,modelSelection,groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
   );
   const resetSelectedTransforms = useCallback(() => {
+    if(modelSelection.length){recordSimulationHistory("Reset model selection");setImportedModels(resetModelCoordinates(importedModels,modelSelection.filter(id=>!modelIsLocked(id))));setModelTransformPreview(null);return;}
     if (selectedTransformGroups.length) {
       const ids = new Set(selectedTransformGroups.map((group) => group.id));
       recordSimulationHistory(`Reset ${ids.size} group${ids.size === 1 ? "" : "s"}`);
@@ -2980,7 +3223,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       });
       return next;
     });
-  }, [groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, selectedSliceIds.length, selectedSlices, selectedTransformGroups]);
+  }, [effectiveModels,importedModels,modelSelection,groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, selectedSliceIds.length, selectedSlices, selectedTransformGroups]);
   const arrangeSimulationSelection = useCallback(
     (axis: 0 | 1 | 2, operation: "align" | "distribute") => {
       const groupTargets = selectedTransformGroups.map((group) => ({ kind: "group" as const, id: group.id, transform: normalizeTransform(groupWorldById.get(group.id) || group.transform) }));
@@ -3019,11 +3262,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return next;
       });
     },
-    [groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
+    [effectiveModels,importedModels,modelSelection,groupBySliceId, groupWorldById, initialSimulationTransform, recordSimulationHistory, renderedSimulationTransforms, selectedSlices, selectedTransformGroups],
   );
   const selectHierarchySlice = useCallback(
     (id: string, modifiers: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
       const additive = modifiers.ctrlKey || modifiers.metaKey;
+      if(!additive)setModelSelection([]);
       setSelectedGroupIds([]);
       setSelectedSliceIds((current) => {
         if (modifiers.shiftKey && hierarchySelectionAnchorRef.current) {
@@ -3045,6 +3289,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   const selectHierarchyGroup = useCallback(
     (group: SceneGroup, modifiers: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
       const additive = modifiers.ctrlKey || modifiers.metaKey;
+      if(!additive)setModelSelection([]);
       let next: string[];
       if (modifiers.shiftKey && hierarchyGroupSelectionAnchorRef.current) {
         const anchorIndex = hierarchyOrderedGroupIds.indexOf(hierarchyGroupSelectionAnchorRef.current),
@@ -3091,85 +3336,39 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     [recordSimulationHistory, selectedSliceIds, simulationLocks],
   );
   const groupSelectedSlices = useCallback(() => {
-    const ids = selectedSliceIds.filter((id) => !groupedSliceIds.has(id));
-    if (!ids.length) {
-      setNotice("Select one or more ungrouped slices first");
-      return;
-    }
-    recordSimulationHistory(`Group ${ids.length} slice${ids.length > 1 ? "s" : ""}`);
-    const id = `group-${Date.now()}`,
-      transform = groupTransformForSliceIds(ids);
-    setSimulationTransforms((current) => {
-      const next = { ...current };
-      ids.forEach((sliceId) => {
-        const world = renderedSimulationTransforms[sliceId];
-        if (world) next[sliceId] = worldToLocalTransform(transform, world);
-      });
-      return next;
-    });
-    setSimulationGroups((current) => [
-      ...current,
-      {
-        id,
-        name: `Group ${current.length + 1}`,
-        sliceIds: ids,
-        parentId: null,
-        visible: true,
-        locked: false,
-        expanded: true,
-        transform,
-        initialTransform: normalizeTransform(transform),
-      },
-    ]);
-    setSelectedGroupIds([id]);
-  }, [groupTransformForSliceIds, groupedSliceIds, recordSimulationHistory, renderedSimulationTransforms, selectedSliceIds]);
+    try {
+      const groupIds=new Set(selectedTransformGroups.map(g=>g.id));
+      const selectedModels=modelSelection.filter(id=>!modelIsLocked(id));
+      const ids=selectedSliceIds.filter(id=>!simulationLockedIds.includes(id)&&!selectedGroupSliceIds.includes(id));
+      const slices=hasGroupSelection?ids:selectedSliceIds.filter(id=>!simulationLockedIds.includes(id));
+      if(!selectedModels.length&&!slices.length&&!groupIds.size)return;
+      if(selectedTransformGroups.some(g=>g.locked||groupAncestorIds(g.id,simulationGroups).some(id=>simulationGroups.find(p=>p.id===id)?.locked)))throw new Error("Unlock the selected groups before grouping.");
+      const id=crypto.randomUUID(),points:THREE.Vector3[]=[];
+      if(slices.length)points.push(new THREE.Vector3(...groupTransformForSliceIds(slices).position));
+      if(selectedModels.length){const bounds=modelSelectionBounds(importedModels,selectedModels);if(!bounds.isEmpty())points.push(bounds.getCenter(new THREE.Vector3()));}
+      for(const g of selectedTransformGroups)points.push(new THREE.Vector3(...groupWorldTransform(g.id,simulationGroups).position));
+      const center=points.reduce((a,b)=>a.add(b),new THREE.Vector3()).divideScalar(points.length||1),transform=normalizeTransform({position:center.toArray()});
+      const models=selectedModels.length?moveModelNodes(importedModels,selectedModels,null,id):importedModels;
+      const group:SceneGroup={id,name:`Group ${simulationGroups.length+1}`,sliceIds:slices,parentId:null,visible:true,locked:false,expanded:true,transform,initialTransform:normalizeTransform(transform)};
+      const groups=simulationGroups.map(g=>({...g,sliceIds:g.sliceIds.filter(s=>!slices.includes(s)),...(groupIds.has(g.id)?{parentId:id,transform:worldToLocalTransform(transform,groupWorldTransform(g.id,simulationGroups))}:{})}));
+      recordSimulationHistory("Group selection");setImportedModels(models);replaceSimulationGroups([...groups,group]);
+      setSimulationTransforms(current=>({...current,...Object.fromEntries(slices.map(id=>[id,worldToLocalTransform(transform,renderedSimulationTransforms[id])]))}));
+      setModelSelection([]);setSelectedGroupIds([id]);setSelectedSliceIds([...new Set([...slices,...selectedGroupSliceIds])]);
+    }catch(error){setNotice(error instanceof Error?error.message:"Unable to group selection");}
+  }, [importedModels,modelSelection,selectedTransformGroups,selectedSliceIds,selectedGroupSliceIds,hasGroupSelection,simulationLockedIds,simulationGroups,effectiveModels,groupTransformForSliceIds,renderedSimulationTransforms,recordSimulationHistory]);
   const ungroupSelectedSlices = useCallback(() => {
-    const groups = simulationGroups.filter((group) => selectedGroupIds.includes(group.id) || (!selectedGroupIds.length && group.sliceIds.some((id) => selectedSliceIds.includes(id))));
-    if (!groups.length) return;
-    recordSimulationHistory(`Ungroup ${groups.length} group${groups.length > 1 ? "s" : ""}`);
-    const ids = new Set(groups.map((group) => group.id));
-    setSimulationTransforms((current) => {
-      const next = { ...current };
-      groups.forEach((group) =>
-        group.sliceIds.forEach((id) => {
-          const world = renderedSimulationTransforms[id];
-          if (!world) return;
-          const parentWorld = group.parentId ? groupWorldById.get(group.parentId) : null;
-          next[id] = parentWorld ? worldToLocalTransform(parentWorld, world) : normalizeTransform(world);
-        }),
-      );
-      return next;
-    });
-    setSimulationGroups((current) => {
-      let nextGroups = current
-        .filter((group) => !ids.has(group.id))
-        .map((group) => {
-          if (!group.parentId || !ids.has(group.parentId)) return group;
-          const removedParent = simulationGroups.find((item) => item.id === group.parentId),
-            nextParentId = removedParent?.parentId || null,
-            world = groupWorldById.get(group.id) || group.transform,
-            parentWorld = nextParentId ? groupWorldById.get(nextParentId) : null;
-          return {
-            ...group,
-            parentId: nextParentId,
-            transform: parentWorld ? worldToLocalTransform(parentWorld, world) : normalizeTransform(world),
-          };
-        });
-      groups.forEach((removed) => {
-        if (!removed.parentId || ids.has(removed.parentId)) return;
-        nextGroups = nextGroups.map((group) =>
-          group.id === removed.parentId
-            ? {
-                ...group,
-                sliceIds: [...group.sliceIds, ...removed.sliceIds.filter((sliceId) => !group.sliceIds.includes(sliceId))],
-              }
-            : group,
-        );
-      });
-      return nextGroups;
-    });
-    setSelectedGroupIds([]);
-  }, [groupWorldById, recordSimulationHistory, renderedSimulationTransforms, selectedGroupIds, selectedSliceIds, simulationGroups]);
+    if (modelSelection.length) { try{const next=ungroupModels(importedModels,modelSelection.filter(id=>!modelIsLocked(id)));recordSimulationHistory("Ungroup model parts");setImportedModels(next);setModelSelection([]);}catch(error){setNotice((error as Error).message);}return; }
+    const ids=simulationGroups.filter(group=>selectedGroupIds.includes(group.id)||(!selectedGroupIds.length&&group.sliceIds.some(id=>selectedSliceIds.includes(id)))).map(g=>g.id);
+    if(!ids.length)return;
+    try{
+      const released=releaseSceneGroups(simulationGroups,ids,simulationTransforms,renderedSimulationTransforms);
+      recordSimulationHistory("Ungroup selection");
+      setImportedModels(transformSceneGroupModels(importedModels,simulationGroups,released.groups,false));
+      replaceSimulationGroups(released.groups);setSimulationTransforms(released.transforms);setSelectedGroupIds([]);setSelectedSliceIds(released.returnedSliceIds);
+      setSimulationTransformPreview(null);setGroupModelPreview(null);
+      if(released.returnedSliceIds.length)setNotice("Resolume slices returned to their original screen containers; scene placement preserved");
+    }catch(error){setNotice((error as Error).message);}
+  }, [effectiveModels,importedModels,modelSelection,recordSimulationHistory,renderedSimulationTransforms,selectedGroupIds,selectedSliceIds,simulationGroups,simulationTransforms,replaceSimulationGroups]);
   const commitSimulationTransforms = useCallback(
     (updates: Record<string, SliceTransform>) => {
       const count = Object.keys(updates).length;
@@ -3216,6 +3415,20 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     (targetKind: "group" | "slice", targetId: string, placement: "before" | "inside" | "after") => {
       const dragged = hierarchyDrag;
       if (!dragged || (dragged.kind === targetKind && dragged.id === targetId)) return;
+      const groupLocked=(id:string)=>simulationGroups.find(g=>g.id===id)?.locked||groupAncestorIds(id,simulationGroups).some(parent=>simulationGroups.find(g=>g.id===parent)?.locked);
+      const targetGroup=targetKind==="group"?targetId:groupBySliceId.get(targetId)?.id;
+      if(targetKind==="slice"&&!targetGroup&&dragged.kind!=="slice"){setNotice("Screen containers accept only their original Resolume slices");setHierarchyDrag(null);setHierarchyDrop(null);return;}
+
+      if((dragged.kind==="group"&&groupLocked(dragged.id))||(dragged.kind==="slice"&&simulationLockedIds.includes(dragged.id))||(targetGroup&&groupLocked(targetGroup))){setNotice("Unlock the source and target branches before changing their parent");setHierarchyDrag(null);setHierarchyDrop(null);return;}
+
+      if (dragged.kind === "model") {
+        const target=targetKind==="group"?simulationGroups.find(g=>g.id===targetId):groupBySliceId.get(targetId);
+        const owner=targetKind==="group"&&placement!=="inside"?target?.parentId:target?.id;
+        try{if(target && (target.locked||groupAncestorIds(target.id,simulationGroups).some(id=>simulationGroups.find(g=>g.id===id)?.locked)))throw new Error("Unlock the target group first.");
+          const ids=modelSelection.includes(dragged.id)?modelSelection:[dragged.id];if(ids.some(modelIsLocked))throw new Error("Unlock the selected branch first.");
+          const next=moveModelNodes(importedModels,ids,null,owner||null);recordSimulationHistory("Change hierarchy parent");setImportedModels(next);if(owner)setSimulationGroups(current=>current.map(g=>g.id===owner?{...g,expanded:true}:g));
+        }catch(error){setNotice((error as Error).message);}setHierarchyDrag(null);setHierarchyDrop(null);return;
+      }
       if (dragged.kind === "group") {
         if (targetKind !== "group") return;
         const source = simulationGroups.find((group) => group.id === dragged.id),
@@ -3270,11 +3483,13 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       setHierarchyDrag(null);
       setHierarchyDrop(null);
     },
-    [groupBySliceId, groupWorldById, hierarchyDrag, recordSimulationHistory, renderedSimulationTransforms, simulationGroups],
+    [simulationLockedIds,importedModels,modelSelection,effectiveModels,groupBySliceId, groupWorldById, hierarchyDrag, recordSimulationHistory, renderedSimulationTransforms, simulationGroups],
   );
   const dropHierarchyAtRoot = useCallback(() => {
     const dragged = hierarchyDrag;
     if (!dragged) return;
+    if((dragged.kind==="slice"&&simulationLockedIds.includes(dragged.id))||(dragged.kind==="group"&&(simulationGroups.find(g=>g.id===dragged.id)?.locked||groupAncestorIds(dragged.id,simulationGroups).some(id=>simulationGroups.find(g=>g.id===id)?.locked)))){setNotice("Unlock the selected branch before changing its parent");setHierarchyDrag(null);setHierarchyDrop(null);return;}
+    if(dragged.kind==="model"){try{const ids=modelSelection.includes(dragged.id)?modelSelection:[dragged.id];if(ids.some(modelIsLocked))throw new Error("Unlock the selected branch first.");const next=moveModelNodes(importedModels,ids,null);recordSimulationHistory("Move items to scene root");setImportedModels(next);}catch(error){setNotice((error as Error).message);}setHierarchyDrag(null);setHierarchyDrop(null);return;}
     if (dragged.kind === "group") {
       const group = simulationGroups.find((item) => item.id === dragged.id);
       if (!group || !group.parentId) return;
@@ -3285,7 +3500,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       const owner = groupBySliceId.get(dragged.id),
         world = renderedSimulationTransforms[dragged.id];
       if (!owner || !world) return;
-      recordSimulationHistory("Move slice to scene root");
+      recordSimulationHistory("Return slice to original screen");
       setSimulationGroups((current) =>
         current.map((group) =>
           group.id === owner.id
@@ -3303,7 +3518,39 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     }
     setHierarchyDrag(null);
     setHierarchyDrop(null);
-  }, [groupBySliceId, groupWorldById, hierarchyDrag, recordSimulationHistory, renderedSimulationTransforms, simulationGroups]);
+  }, [simulationLockedIds,importedModels,modelSelection,effectiveModels,groupBySliceId, groupWorldById, hierarchyDrag, recordSimulationHistory, renderedSimulationTransforms, simulationGroups]);
+
+  function dropOnModel(targetId:string,placement:"before"|"inside"|"after") {
+    const dragged=hierarchyDrag;if(!dragged)return;
+    try {
+      if(modelIsLocked(targetId))throw new Error("Unlock the target branch first.");
+      const targetModel=importedModels.find(m=>m.nodes.some(n=>n.id===targetId)),target=targetModel?.nodes.find(n=>n.id===targetId);if(!target||!targetModel)return;
+      const parentId=placement==="inside"&&!target.geometry?target.id:target.parent;
+      if(dragged.kind==="model"){
+        const ids=modelSelection.includes(dragged.id)?modelSelection:[dragged.id];if(ids.some(modelIsLocked))throw new Error("Unlock the selected branch first.");
+        const next=moveModelNodes(importedModels,ids,parentId,target.sceneGroupId||null,placement==="inside"?undefined:targetId,placement==="after");
+        recordSimulationHistory("Change hierarchy parent");setImportedModels(next);if(parentId)setModelExpanded(old=>new Set([...old,parentId]));
+      }else{
+        const promoted=parentId?promoteModelGroup(importedModels,simulationGroups,parentId):{models:importedModels,groups:simulationGroups};
+        const owner=parentId || target.sceneGroupId || null;
+        if(dragged.kind==="group"){
+          const source=simulationGroups.find(g=>g.id===dragged.id);if(!source)return;
+          if(source.locked||groupAncestorIds(source.id,simulationGroups).some(id=>simulationGroups.find(g=>g.id===id)?.locked))throw new Error("Unlock the source group first.");
+          if(!canParentGroup(source.id,owner,promoted.groups))throw new Error("A group cannot be placed inside its descendants.");
+          const world=groupWorldTransform(source.id,simulationGroups),parent=owner?groupWorldTransform(owner,promoted.groups):null;
+          promoted.groups=promoted.groups.map(g=>g.id===source.id?{...g,parentId:owner,transform:parent?worldToLocalTransform(parent,world):world}:g);
+        }else{
+          if(simulationLockedIds.includes(dragged.id))throw new Error("Unlock the slice first.");
+          const world=renderedSimulationTransforms[dragged.id];if(!world)return;
+          promoted.groups=promoted.groups.map(g=>({...g,sliceIds:[...g.sliceIds.filter(id=>id!==dragged.id),...(g.id===owner?[dragged.id]:[])]}));
+          const parent=owner?groupWorldTransform(owner,promoted.groups):null;
+          recordSimulationHistory("Change hierarchy parent");setSimulationTransforms(current=>({...current,[dragged.id]:parent?worldToLocalTransform(parent,world):world}));
+        }
+        if(dragged.kind==="group")recordSimulationHistory("Change hierarchy parent");
+        setImportedModels(promoted.models);replaceSimulationGroups(promoted.groups);setModelSelection([]);setSelectedGroupIds(owner?[owner]:[]);setSelectedSliceIds(owner?groupDescendantSliceIds(owner,promoted.groups):[]);
+      }
+    }catch(error){setNotice((error as Error).message);}finally{setHierarchyDrag(null);setHierarchyDrop(null);}
+  }
 
   const stats = useMemo(() => {
     const pitchX = (config.wallWidth * 1000) / config.resolutionWidth,
@@ -3337,6 +3584,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   const renderToCanvas = useCallback(
     (canvas: HTMLCanvasElement, mode = workspaceMode, view = mapView, screen = activeScreen, slices?: ResolumeSlice[], selection = true, interactivePreview = false) => {
       const started = performance.now();
+      if (mode === "resolume" && !resolumeMap) {
+        // Clear a previously rendered pattern/map, including offscreen output canvases.
+        canvas.width = 1;
+        canvas.height = 1;
+        return;
+      }
       const dimensions = mode === "patterns" ? projectionDimensions(config) : { width: config.resolutionWidth, height: config.resolutionHeight },
         width = mode === "resolume" && resolumeMap ? (view === "input" ? resolumeMap.compositionWidth : screen?.width || 1) : dimensions.width,
         height = mode === "resolume" && resolumeMap ? (view === "input" ? resolumeMap.compositionHeight : screen?.height || 1) : dimensions.height,
@@ -3369,6 +3622,19 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return;
       }
       if (slice) {
+        if (config.mapPatternScope === "map") {
+          canvas.width = Math.max(1, Math.round(slice.input.width));
+          canvas.height = Math.max(1, Math.round(slice.input.height));
+          const context = canvas.getContext("2d", { alpha: true });
+          if (context) {
+            // Draw this screen's portion in composition space without allocating a full atlas per slice.
+            context.save();
+            context.translate(-slice.input.x, -slice.input.y);
+            drawPixelMap(context, resolumeMap.compositionWidth, resolumeMap.compositionHeight, [slice], "input", config, logoImage, sliceOverrides, [], false);
+            context.restore();
+          }
+          return;
+        }
         const shifted = {
           ...slice,
           input: {
@@ -3597,6 +3863,15 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     );
     return () => window.clearInterval(timer);
   }, [sequenceActive, workspaceMode]);
+  const mapSequenceWorkspace = workspaceMode === "resolume" || workspaceMode === "simulation" || windowedOutputOpen;
+  useEffect(() => {
+    if (!mapSequenceActive || !mapSequenceWorkspace || !resolumeMap) return;
+    const timer = window.setInterval(() => setConfig((current) => ({
+      ...current,
+      mapFill: MAP_FILLS[(MAP_FILLS.findIndex((fill) => fill.id === current.mapFill) + 1) % MAP_FILLS.length].id,
+    })), 3000);
+    return () => window.clearInterval(timer);
+  }, [mapSequenceActive, mapSequenceWorkspace, resolumeMap]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (event.code === "Space" && !(event.target instanceof HTMLInputElement)) {
@@ -3619,6 +3894,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       if (workspaceMode !== "simulation" || !(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key !== "z" && key !== "y") return;
+      if(document.querySelector(".project-replacement-dialog[open]"))return;
+      setTransferSource(null);
       event.preventDefault();
       window.dispatchEvent(new Event("lo2s-history-navigation"));
       if (key === "z") {
@@ -3640,14 +3917,20 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       if (event.ctrlKey || event.metaKey) {
         if (key === "g" && !event.shiftKey) {
           event.preventDefault();
-          if (!event.repeat && selectedSliceIds.length && !hasGroupSelection) groupSelectedSlices();
+          if (!event.repeat && (modelSelection.length || selectedSliceIds.length || hasGroupSelection)) groupSelectedSlices();
           return;
         }
         if (key !== "a" || event.shiftKey || !document.activeElement?.closest('.three-view') || !fullscreenHostRef.current?.contains(document.activeElement)) return;
         event.preventDefault();
         setSimulationTransformPreview(null);
         setSelectedGroupIds([]);
+        if (modelSelection.length) { setModelSelection(importedModels.map(m=>m.nodes[0].id)); return; }
         setSelectedSliceIds(allSlices.map((slice) => slice.id));
+        return;
+      }
+      if (key === "delete" && !event.shiftKey) {
+        // Mapped screen/slice data is never a target of the Delete shortcut.
+        if (modelSelection.length || hasGroupSelection) { event.preventDefault(); if (!event.repeat && !fullscreenHostRef.current?.querySelector('[data-transform-dragging="true"]')) deleteSelectedSceneItems(); }
         return;
       }
       const viewShortcuts: Partial<Record<string, SimulationView>> = {
@@ -3667,23 +3950,16 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       else if (key === "r") setSimulationTool("rotate");
       else if (key === "t") setSimulationTool("scale");
       else if (key === "f") setSimulationFitSignal((value) => value + 1);
-      else if (selectedSliceIds.length) setSimulationFocusSignal((value) => value + 1);
+      else if (selectedSliceIds.length || modelSelection.length || hasGroupSelection) {
+        const overHierarchy=!!document.querySelector('.hierarchy-focus-context:hover');
+        const overViewport=!!document.querySelector('.three-view:hover');
+        if(overHierarchy||(!overViewport&&target?.closest('.hierarchy-focus-context')))revealHierarchySelection();
+        else setSimulationFocusSignal((value)=>value+1);
+      }
     };
     window.addEventListener("keydown", handleViewportShortcut);
     return () => window.removeEventListener("keydown", handleViewportShortcut);
-  }, [allSlices, groupSelectedSlices, hasGroupSelection, selectedSliceIds.length, workspaceMode]);
-
-  const openArrangeControls = (section: "align" | "distribute") => {
-    setV070InspectorTab("scene");
-    setArrangeNavigation({ section });
-  };
-  useEffect(() => {
-    if (!arrangeNavigation || handledArrangeNavigation.current === arrangeNavigation || workspaceMode !== "simulation" || v070InspectorTab !== "scene") return;
-    const section = document.getElementById(`scene-${arrangeNavigation.section}`);
-    section?.scrollIntoView({ block: "nearest" });
-    section?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
-    if (section) handledArrangeNavigation.current = arrangeNavigation;
-  }, [arrangeNavigation, v070InspectorTab, workspaceMode]);
+  }, [revealHierarchySelection,selectedSceneModelIds,allSlices, importedModels, modelSelection, deleteSelectedSceneItems, groupSelectedSlices, hasGroupSelection, selectedSliceIds.length, workspaceMode]);
 
   const update = useCallback(<K extends keyof PatternConfig>(key: K, value: PatternConfig[K]) => setConfig((current) => ({ ...current, [key]: value })), []);
   const updatePatternStyle = useCallback(<K extends keyof PatternStyle>(key: K, value: PatternStyle[K]) => setPatternStyle((current) => ({ ...current, [key]: value })), []);
@@ -3773,7 +4049,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         setXmlError("");
         setPendingXmlUpdate(null);
         setSimulationFitSignal((value) => value + 1);
-        setSelectedScreen((current) => Math.min(current, Math.max(0, map.screens.length - 1)));
+        setSelectedScreen((current) => Number.isInteger(current) && map.screens[current] ? current : 0);
         setSelectedSliceIds((current) => current.filter((id) => validIds.has(id)));
         setWorkspaceMode((current) => (current === "simulation" ? "simulation" : "resolume"));
         if (options.resetView) {
@@ -3792,7 +4068,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         return false;
       }
     },
-    [],
+    [setNotice],
   );
   const loadXml = useCallback(
     (file?: File) => {
@@ -3846,12 +4122,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       mtimeMs: result.mtimeMs,
       resetView: true,
     });
-  }, [applyXmlText]);
+  }, [applyXmlText, setNotice]);
   const unlinkResolume = useCallback(async () => {
     await (window as PickerWindow).lo2sDesktop?.unlinkResolumeMap();
     setXmlLinkState("unlinked");
     setNotice("Resolume map unlinked");
-  }, []);
+  }, [setNotice]);
   useEffect(() => {
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!desktop) return;
@@ -3907,12 +4183,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     }
   }, []);
   const disconnectNativeInput = useCallback(async () => {
-    await (window as PickerWindow).lo2sDesktop?.disconnectNativeSource?.();
     setSimulationNativeConnected(false);
     setSimulationNativeKind(null);
     simulationNativeCanvasRef.current = null;
     setSimulationNativeCanvas(null);
     setSimulationSourceStatus("Not connected");
+    await (window as PickerWindow).lo2sDesktop?.disconnectNativeSource?.();
   }, []);
   const connectNativeInput = useCallback(
     async (qualityOverride?: "latency" | "quality", kindOverride?: "ndi" | "spout", sourceOverride?: string) => {
@@ -4100,7 +4376,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     return true;
   }, []);
   const export3DScene = useCallback(async (formatOverride?: SceneExportFormat) => {
-    if (!resolumeMap || !allSlices.length || simulationExporting) {
+    if ((!allSlices.length && !importedModels.length) || simulationExporting) {
       setNotice("Import a Resolume XML map before exporting the 3D scene");
       return;
     }
@@ -4114,10 +4390,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     setNotice("Building " + format.toUpperCase() + " scene…");
     try {
       const result = await exportSimulationScene(format, {
-        projectName: resolumeMap.name || config.project,
+        projectName: resolumeMap?.name || config.project,
+        models: effectiveModels,
+        bodyAppearanceBySlice:simulationBodyBySlice,
         slices: allSlices,
-        compositionWidth: resolumeMap.compositionWidth,
-        compositionHeight: resolumeMap.compositionHeight,
+        compositionWidth: resolumeMap?.compositionWidth || config.resolutionWidth,
+        compositionHeight: resolumeMap?.compositionHeight || config.resolutionHeight,
         masterPitchMm: simulationMasterPitchMm,
         pitchBySlice: simulationPitchBySlice,
         depthBySlice: simulationDepthBySlice,
@@ -4133,7 +4411,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     } finally {
       setSimulationExporting(false);
     }
-  }, [allSlices, config.project, drawSimulationTexture, invalidCurvedDepthSlices.length, resolumeMap, saveExportBlob, simulationCurvatureBySlice, simulationDepthBySlice, simulationExportFormat, simulationExportTransforms, simulationExporting, simulationGroups, simulationMasterPitchMm, simulationPitchBySlice, simulationPivotBySlice]);
+  }, [effectiveModels,simulationBodyBySlice, importedModels, allSlices, config.project, config.resolutionWidth, config.resolutionHeight, drawSimulationTexture, invalidCurvedDepthSlices.length, resolumeMap, saveExportBlob, simulationCurvatureBySlice, simulationDepthBySlice, simulationExportFormat, simulationExportTransforms, simulationExporting, simulationGroups, simulationMasterPitchMm, simulationPitchBySlice, simulationPivotBySlice, setNotice]);
   const exportCurrent = useCallback(async () => {
     const canvas = document.createElement("canvas");
     renderToCanvas(canvas, workspaceMode, mapView, activeScreen, undefined, false);
@@ -4144,7 +4422,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       : `OpticMesh - ${patternProjectTitle(config.project)} - ${patternModeFilename(config.projectionFormat)} - ${canvas.width}x${canvas.height}.png`;
     await saveBlob(blob, name);
     setNotice(`Exported ${name}`);
-  }, [activeScreen, config.project, config.projectionFormat, mapView, renderToCanvas, resolumeMap, saveBlob, workspaceMode]);
+  }, [activeScreen, config.project, config.projectionFormat, mapView, renderToCanvas, resolumeMap, saveBlob, workspaceMode, setNotice]);
   const exportOutputs = useCallback(async () => {
     if (!resolumeMap) return;
     const desktop = (window as PickerWindow).lo2sDesktop,
@@ -4196,7 +4474,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       }
     }
     setNotice(`Exported ${generated.length} output maps`);
-  }, [renderToCanvas, resolumeMap]);
+  }, [renderToCanvas, resolumeMap, setNotice]);
   const exportSelected = useCallback(async () => {
     if (!selectedSlices.length) return;
     for (const slice of selectedSlices) {
@@ -4232,15 +4510,13 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       if (blob) await saveBlob(blob, `${slugify(slice.screenName)}-${slugify(slice.name)}-${mapView}-${canvas.width}x${canvas.height}.png`);
     }
     setNotice(`Exported ${selectedSlices.length} selected slice${selectedSlices.length > 1 ? "s" : ""}`);
-  }, [config, logoImage, mapView, saveBlob, selectedSlices, sliceOverrides]);
+  }, [config, logoImage, mapView, saveBlob, selectedSlices, sliceOverrides, setNotice]);
 
-  const projectData = useMemo(
-    () =>
-      JSON.stringify(
-        {
+  const projectSnapshot = useMemo(
+    () => ({
           format: "opticmesh-project",
-          version: 3,
-          appVersion: packageMetadata.version,
+          version: importedModels.length || Object.keys(simulationBodyAppearances).length ? 4 : 3,
+          appVersion: LOCAL_PREVIEW ? "0.8.0-beta" : packageMetadata.version,
           config,
           patternStyle,
           patternCalibration,
@@ -4253,6 +4529,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           rawXml,
           xmlName,
           simulation: {
+            models: importedModels,
+            bodyAppearances:simulationBodyAppearances,
             transforms: simulationTransforms,
             depthM: simulationDepthM,
             curvature: simulationCurvature,
@@ -4268,27 +4546,32 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             gridVisible: simulationGridVisible,
       snapEnabled: simulationSnapEnabled,
             floorVisible: simulationFloorVisible,
-            backgroundLevel: simulationBackgroundLevel,
+            backgroundLevel: simulationBackgroundLevel, reflectionPreset: simulationReflectionPreset,
             visibility: simulationVisibility,
             locks: simulationLocks,
             localNames: simulationLocalNames,
             groups: simulationGroups,
           },
-        },
-        null,
-        2,
-      ),
-    [calculatorSources, config, logoData, logoName, mapView, patternCalibration, patternStyle, rawXml, simulationBackgroundLevel, simulationCamera, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTool, simulationTransformSpace, simulationTransforms, simulationVisibility, sliceOverrides, workspaceMode, xmlName],
+    }),
+    [simulationReflectionPreset, simulationBodyAppearances, importedModels, calculatorSources, config, logoData, logoName, mapView, patternCalibration, patternStyle, rawXml, simulationBackgroundLevel, simulationCamera, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTool, simulationTransformSpace, simulationTransforms, simulationVisibility, sliceOverrides, workspaceMode, xmlName],
   );
+  const currentProjectSnapshot = useCallback(() => ({ ...projectSnapshot, simulation: { ...projectSnapshot.simulation, camera: simulationCameraMemory.current || projectSnapshot.simulation.camera } }), [projectSnapshot]);
+  const projectData = useCallback(() => JSON.stringify(currentProjectSnapshot(), null, 2), [currentProjectSnapshot]);
+  const projectEncoder = useRef<ProjectEncoder | null>(null);
+  const desktopProjectTracker = useRef(new ProjectSnapshotTracker());
+  const autosaveInFlight = useRef(false);
+  useEffect(() => () => { projectEncoder.current?.dispose(); projectEncoder.current = null; }, []);
   const encodedProjectData = useCallback(() => {
-    const encoded = new TextEncoder().encode(projectData);
+    const encoded = new TextEncoder().encode(projectData());
     return encoded.buffer as ArrayBuffer;
   }, [projectData]);
   const applyProjectData = useCallback((source: string, successMessage = "Project loaded") => {
     try {
       const data = JSON.parse(source);
       if (data?.format !== "opticmesh-project") throw new Error("This is not a LO2S - OpticMesh project.");
-      if (Number(data.version || 1) > 3) throw new Error(`This project uses schema ${data.version}; this version supports schema 3.`);
+      if (Number(data.version || 1) > 4) throw new Error(`This project uses schema ${data.version}; this version supports schema 4.`);
+      const restoredModels = validateModels(data.simulation?.models);
+      const restoredBodyAppearances=validateBodyAppearances(data.simulation?.bodyAppearances);
       const migrated = {
         ...DEFAULT_CONFIG,
         ...data.config,
@@ -4306,7 +4589,10 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       setPatternStyle({ ...loadedPatternStyle, centerDotSize: normalizeCenterDotSize(loadedPatternStyle.centerDotSize) });
       setPatternCalibration(data.patternCalibration === "gamma" || data.patternCalibration === "seam" ? data.patternCalibration : "none");
       setCalculatorSources(Array.isArray(data.calculatorSources) && data.calculatorSources.length === 2 ? data.calculatorSources : ["physical", "raster"]);
-      setWorkspaceMode(data.workspaceMode || "patterns");
+      const restoredWorkspace: WorkspaceMode = data.workspaceMode === "simulation" || data.workspaceMode === "resolume" ? data.workspaceMode : "patterns";
+      setWorkspaceMode(restoredWorkspace);
+      setControlTab(restoredWorkspace === "simulation" ? "scene" : "setup");
+      setV070InspectorTab(restoredWorkspace === "simulation" ? "scene" : restoredWorkspace === "resolume" ? "source" : "setup");
       setMapView(data.mapView || "input");
       setSliceOverrides(Object.fromEntries(Object.entries((data.sliceOverrides || {}) as Record<string, SliceOverride>)
         .map(([id, override]) => [id, override.centerDotSize == null ? override : { ...override, centerDotSize: normalizeCenterDotSize(override.centerDotSize) }])));
@@ -4324,15 +4610,27 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         image.src = data.logoData;
       } else setLogoImage(null);
       const simulation = data.simulation || {};
+      setImportedModels(restoredModels);
+      setModelExpanded(new Set()); setModelSelection([]);setModelTransformPreview(null);
       setSimulationTransforms(simulation.transforms || {});
       setSimulationDepthM(clamp(simulation.depthM ?? 0.1, 0.01, 0.5));
+      setSimulationBodyAppearances(restoredBodyAppearances);
       setSimulationCurvature(simulation.curvature || { horizontal: 0, vertical: 0 });
       setSimulationCurvatureOverrides(simulation.curvatureOverrides || {});
       setSimulationTool(simulation.tool || "translate");
-      setSimulationSource(normalizeSimulationSource(simulation.source));
+      // Live inputs are session connections. Every project opens with visible
+      // generated patterns, including slices previously routed to a live feed.
+      stopSimulationInput();
+      void disconnectNativeInput();
+      setSimulationSource("pattern");
+      setSimulationSourceStatus("Native · full quality");
       setSimulationQuality(simulation.quality || "latency");
-      setSimulationSourceOverrides(normalizeSourceOverrides(simulation.sourceOverrides));
+      setSimulationSourceOverrides({});
+      simulationCameraMemory.current=simulation.camera;
       setSimulationCamera(simulation.camera);
+      setSimulationCameraSession(value=>value+1);
+      setSimulationFitSignal(0);setSimulationFocusSignal(0);
+      setSimulationViewMode("perspective");
       setSimulationTransformSpace(simulation.transformSpace || "local");
       setSimulationPivot(simulation.pivot || "bottom-center");
       setSimulationPivotOverrides(simulation.pivotOverrides || {});
@@ -4340,10 +4638,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       setSimulationSnapEnabled(simulation.snapEnabled ?? false);
       setSimulationFloorVisible(simulation.floorVisible ?? true);
       setSimulationBackgroundLevel(simulation.backgroundLevel ?? 100);
+      setSimulationReflectionPreset(reflectionPreset(simulation.reflectionPreset));
       setSimulationVisibility(simulation.visibility || {});
       setSimulationLocks(simulation.locks || {});
       setSimulationLocalNames(simulation.localNames || {});
-      setSimulationGroups(Array.isArray(simulation.groups) ? simulation.groups.map(migrateTransformGroup) : []);
+      replaceSimulationGroups(Array.isArray(simulation.groups) ? simulation.groups.map(migrateTransformGroup) : []);
       setSelectedGroupIds([]);
       undoHistoryRef.current = [];
       redoHistoryRef.current = [];
@@ -4354,7 +4653,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       setNotice(error instanceof Error ? error.message : "That project file could not be read");
       return false;
     }
-  }, []);
+  }, [stopSimulationInput, disconnectNativeInput]);
   const compileProject = async () => {
     if (compileInFlight.current || !resolumeMap || !rawXml) return;
     compileInFlight.current = true; setCompilingProject(true);
@@ -4389,12 +4688,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         } finally { canvas.width = 1; canvas.height = 1; }
       }
       if (desktop?.compileProject) {
-        const result = await desktop.compileProject({ name: config.project, project: projectData, files });
+        const result = await desktop.compileProject({ name: config.project, project: projectData(), files });
         if (result.cancelled) { setNotice("Compile cancelled"); return; }
         if (!result.ok) throw new Error(result.error || "Unable to compile project.");
         setNotice(`Project compiled to ${result.path}`);
       } else if (parent) {
-        const snapshot = JSON.parse(projectData);
+        const snapshot = JSON.parse(projectData());
         snapshot.config.project = folderName; snapshot.xmlName = `${folderName}.xml`;
         files.push({ filename: `${folderName}.xml`, data: new TextEncoder().encode(rawXml).buffer as ArrayBuffer }, { filename: `${folderName}.lo2s`, data: new TextEncoder().encode(JSON.stringify(snapshot, null, 2)).buffer as ArrayBuffer });
         destination = await parent.getDirectoryHandle(folderName, { create: true });
@@ -4415,17 +4714,19 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(error instanceof Error ? error.message : "Unable to compile project.");
     } finally { compileInFlight.current = false; setCompilingProject(false); }
   };
-  const saveProject = useCallback(async () => {
+  const saveProject = useCallback(async ():Promise<ProjectSaveOutcome> => {
     const filename = `${slugify(config.project)}.lo2s`;
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (desktop?.saveProject) {
-      const result = await desktop.saveProject(filename, encodedProjectData());
-      if (result.cancelled) return;
+      let result:DesktopProjectResult;
+      try { result = await desktop.saveProject(filename, encodedProjectData()); }
+      catch(error){setNotice(error instanceof Error?error.message:"Unable to save the project");return "failed";}
+      if (result.cancelled) return "cancelled";
       if (result.ok && result.path) setActiveProjectPath(result.path);
       setNotice(result.ok ? "Project saved" : result.error || "Unable to save the project");
-      return;
+      return result.ok ? "saved" : "failed";
     }
-    const blob = new Blob([projectData], {
+    const blob = new Blob([projectData()], {
         type: "application/x-opticmesh-project",
       }),
       picker = (window as PickerWindow).showSaveFilePicker;
@@ -4441,13 +4742,15 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           ],
         });
         const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
+        try { await writable.write(blob); await writable.close(); }
+        catch(error){await writable.abort?.().catch(()=>{});throw error;}
         setNotice("Project saved");
+        return "saved";
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setNotice(error instanceof Error ? error.message : "Unable to save the project");
+        if (error instanceof DOMException && error.name === "AbortError") return "cancelled";
+        setNotice(error instanceof Error ? error.message : "Unable to save the project");
+        return "failed";
       }
-      return;
     }
     const url = URL.createObjectURL(blob),
       anchor = document.createElement("a");
@@ -4455,7 +4758,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     anchor.download = filename;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [config.project, encodedProjectData, projectData]);
+    return "downloaded";
+  }, [config.project, encodedProjectData, projectData, setNotice]);
   const loadProject = useCallback(
     (file?: File) => {
       if (!file) return;
@@ -4480,16 +4784,19 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       return;
     }
     if (applyProjectData(result.content, `Project loaded: ${result.name || "LO2S project"}`)) setActiveProjectPath(result.path || null);
-  }, [applyProjectData]);
-  const saveActiveProject = useCallback(async () => {
+  }, [applyProjectData, setNotice]);
+  const saveActiveProject = useCallback(async ():Promise<ProjectSaveOutcome> => {
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!activeProjectPath || !desktop?.overwriteProject) {
-      await saveProject();
-      return;
+      return saveProject();
     }
-    const result = await desktop.overwriteProject(activeProjectPath, encodedProjectData());
+    let result:DesktopProjectResult;
+    try { result = await desktop.overwriteProject(activeProjectPath, encodedProjectData()); }
+    catch(error){setNotice(error instanceof Error?error.message:"Unable to save the project");return "failed";}
+    if(result.cancelled)return "cancelled";
     setNotice(result.ok ? `Saved ${activeProjectPath.split(/[\\/]/).at(-1)}` : result.error || "Unable to overwrite the project");
-  }, [activeProjectPath, encodedProjectData, saveProject]);
+    return result.ok ? "saved" : "failed";
+  }, [activeProjectPath, encodedProjectData, saveProject, setNotice]);
   const blankProjectSource = useCallback(
     (demo = false, demoWorkspace: "resolume" | "simulation" = "simulation") => {
       const demoMap = demo ? parseResolumeXml(DEMO_RESOLUME_XML) : null;
@@ -4525,6 +4832,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           snapEnabled: false,
           floorVisible: true,
           backgroundLevel: 100,
+          reflectionPreset: 1,
           visibility: {},
           locks: {},
           localNames: {},
@@ -4534,13 +4842,13 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     },
     [],
   );
-  const createBlankProject = useCallback(() => {
+  const replaceWithBlankProject = useCallback(() => {
     if (applyProjectData(blankProjectSource(), "New blank project")) {
       setActiveProjectPath(null);
       setStartupProjectStatus("New project · autosave active");
     }
   }, [applyProjectData, blankProjectSource]);
-  const loadDemoProject = useCallback(async (mode: "resolume" | "simulation") => {
+  const replaceWithDemoProject = useCallback(async (mode: "resolume" | "simulation") => {
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (xmlLinkState !== "unlinked") await desktop?.unlinkResolumeMap?.();
     if (applyProjectData(blankProjectSource(true, mode), "Demo project opened")) {
@@ -4563,12 +4871,19 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       setFullscreenMode("fit");
     }
   }, [applyProjectData, blankProjectSource, xmlLinkState]);
-  const openDemoProject = () => { void loadDemoProject("simulation"); };
+  const requestReplacement=(action:"new"|"demo-scene"|"demo-map")=>{setV070Menu(null);setPendingReplacement(action);};
+  const createBlankProject=()=>requestReplacement("new");
+  const loadDemoProject=(mode:"resolume"|"simulation")=>requestReplacement(mode==="resolume"?"demo-map":"demo-scene");
+  const replacementDialog=pendingReplacement&&<ProjectReplacementDialog key={pendingReplacement} action={pendingReplacement==="new"?"Create a new project":pendingReplacement==="demo-map"?"Load Demo Map":"Load Demo Scene"} onSave={saveActiveProject} onCancel={()=>setPendingReplacement(null)} onProceed={async()=>{
+    if(pendingReplacement==="new")replaceWithBlankProject();else await replaceWithDemoProject(pendingReplacement==="demo-map"?"resolume":"simulation");
+    setPendingReplacement(null);
+  }} />;
+  const openDemoProject = () => { loadDemoProject("simulation"); };
   const loadDemoScene = openDemoProject;
   const revealProjectsFolder = useCallback(async () => {
     const result = await (window as PickerWindow).lo2sDesktop?.revealProjectsFolder?.();
     if (result && !result.ok) setNotice(result.error || "Unable to open the Projects folder");
-  }, []);
+  }, [setNotice]);
   useEffect(() => {
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!desktop?.loadStartupProject) {
@@ -4597,18 +4912,42 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     if (!startupRestoreReady || !desktop?.autosaveProject) return;
     let active = true;
     queueMicrotask(() => { if (active) setStartupProjectStatus((current) => current.includes("failed") ? current : "Unsaved changes"); });
-    const timer = window.setTimeout(() => {
-      setStartupProjectStatus("Saving…");
-      void desktop.autosaveProject(encodedProjectData()).then((result) => {
-        if (active) setStartupProjectStatus(result.ok ? "Latest changes autosaved" : `Autosave failed: ${result.error || "unknown error"}`);
-      }).catch(() => { if (active) setStartupProjectStatus("Autosave failed: unable to save changes"); });
-    }, 500);
-    return () => { active = false; window.clearTimeout(timer); };
-  }, [encodedProjectData, startupRestoreReady]);
+    let timer = 0, reportStatus = true;
+    const save = async () => {
+      if (!active) return;
+      // Never accumulate full-project encodes/writes if disk or IPC is slow.
+      if (autosaveInFlight.current) { timer = window.setTimeout(save, 250); return; }
+      autosaveInFlight.current = true;
+      if (reportStatus) setStartupProjectStatus("Saving…");
+      try {
+        let result: DesktopProjectResult;
+        if (desktop.autosaveProjectDelta) {
+          // Send only changed fields. Electron's context bridge copies full
+          // buffers synchronously even when the receiving IPC handler is async.
+          const patch = desktopProjectTracker.current.patch(currentProjectSnapshot());
+          result = await desktop.autosaveProjectDelta(patch);
+          if (!result.ok) desktopProjectTracker.current.reset();
+        } else {
+          const encoder = projectEncoder.current ||= new ProjectEncoder();
+          const bytes = await encoder.encode(currentProjectSnapshot());
+          if (!active) return;
+          result = await desktop.autosaveProject(bytes);
+        }
+        if (active && (reportStatus || !result.ok)) setStartupProjectStatus(result.ok ? "Latest changes autosaved" : `Autosave failed: ${result.error || "unknown error"}`);
+        reportStatus = !result.ok;
+      } catch { desktopProjectTracker.current.reset(); reportStatus = true; if (active) setStartupProjectStatus("Autosave failed: unable to save changes"); }
+      finally { autosaveInFlight.current = false; }
+    };
+    const scheduleCameraSave = () => { window.clearTimeout(timer); timer = window.setTimeout(save, 500); };
+    cameraAutosaveRequest.current = scheduleCameraSave;
+    timer = window.setTimeout(save, 500);
+    return () => { active = false; window.clearTimeout(timer); if (cameraAutosaveRequest.current === scheduleCameraSave) cameraAutosaveRequest.current = null; };
+  }, [currentProjectSnapshot, startupRestoreReady]);
   useEffect(() => {
     const handleSave = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
+      if(document.querySelector(".project-replacement-dialog[open]"))return;
       void saveActiveProject();
     };
     window.addEventListener("keydown", handleSave);
@@ -4772,6 +5111,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     setPan({ x: 0, y: 0 });
   };
   const changeMapView = (view: MapView) => {
+    setSelectedScreen(activeScreenIndex);
     setMapView(view);
     setSelectedSliceIds([]);
     resetView();
@@ -4892,6 +5232,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     return (
       !query ||
       group.name.toLowerCase().includes(query) ||
+      importedModels.some(m=>m.nodes[0].sceneGroupId===group.id&&m.nodes.some(n=>n.name.toLowerCase().includes(query))) ||
       groupDescendantSliceIds(group.id, simulationGroups).some((id) => {
         const slice = allSlices.find((item) => item.id === id);
         return Boolean(slice && ((simulationLocalNames[id] || slice.name).toLowerCase().includes(query) || slice.screenName.toLowerCase().includes(query)));
@@ -4903,6 +5244,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     const drop = hierarchyDrop?.targetKind === "slice" && hierarchyDrop.targetId === slice.id ? hierarchyDrop.placement : null;
     return (
       <div
+        data-hierarchy-id={slice.id}
+        aria-selected={!hasGroupSelection && selectedSliceIds.includes(slice.id)}
         className={`${!hasGroupSelection && selectedSliceIds.includes(slice.id) ? "hierarchy-row child selected" : "hierarchy-row child"}${drop ? ` drop-${drop}` : ""}`}
         style={{ paddingLeft: `${16 + depth * 14}px` }}
         key={slice.id}
@@ -4970,6 +5313,10 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       </div>
     );
   };
+  const commitGroupName=(group:SceneGroup)=>{
+    if(editingGroupRef.current!==group.id)return;editingGroupRef.current=null;setEditingGroupId(null);
+    const name=editingGroupName.trim();if(name&&name!==group.name){recordSimulationHistory("Rename hierarchy item");setSimulationGroups(current=>current.map(g=>g.id===group.id?{...g,name}:g));}
+  };
   const renderHierarchyGroup = (group: SceneGroup, depth = 0): React.ReactNode => {
     if (!hierarchyGroupMatches(group)) return null;
     const childGroups = simulationGroups.filter((item) => item.parentId === group.id),
@@ -4977,7 +5324,10 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     return (
       <div className="hierarchy-group" key={group.id}>
         <div
-          className={`${selectedGroupIds.includes(group.id) ? "hierarchy-row group selected" : "hierarchy-row group"}${drop ? ` drop-${drop}` : ""}`}
+          data-hierarchy-id={group.id}
+          aria-selected={selectedGroupIds.includes(group.id)}
+          aria-description={hierarchySelectionPath.groups.has(group.id) ? "Contains selected items" : undefined}
+          className={`${selectedGroupIds.includes(group.id) ? "hierarchy-row group selected" : "hierarchy-row group"}${hierarchySelectionPath.groups.has(group.id)?" contains-selection":""}${drop ? ` drop-${drop}` : ""}`}
           style={{ paddingLeft: `${depth * 14}px` }}
           draggable={editingGroupId !== group.id}
           onDragStart={(event) => {
@@ -5015,7 +5365,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           onClick={(event) => selectHierarchyGroup(group, event)}
           onDoubleClick={(event) => {
             event.stopPropagation();
-            setEditingGroupId(group.id);
+            if(group.locked||groupAncestorIds(group.id,simulationGroups).some(id=>simulationGroups.find(g=>g.id===id)?.locked))return;
+            editingGroupRef.current=group.id;setEditingGroupName(group.name);setEditingGroupId(group.id);
           }}
         >
           <button
@@ -5030,26 +5381,26 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           >
             <UiIcon name={group.expanded ? "down" : "right"} />
           </button>
-          {editingGroupId === group.id ? (
+          <span className="hierarchy-name hierarchy-group-name"><UiIcon name="group" />{editingGroupId === group.id ? (
             <input
               autoFocus
-              value={group.name}
+              value={editingGroupName}
               aria-label="Group name"
               onClick={(event) => event.stopPropagation()}
-              onChange={(event) => setSimulationGroups((current) => current.map((item) => (item.id === group.id ? { ...item, name: event.target.value } : item)))}
-              onBlur={() => setEditingGroupId(null)}
+              onChange={(event) => setEditingGroupName(event.target.value)}
+              onBlur={() => commitGroupName(group)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === "Escape") {
                   event.preventDefault();
-                  setEditingGroupId(null);
+                  if(event.key==="Enter")commitGroupName(group);else{editingGroupRef.current=null;setEditingGroupId(null);}
                 }
               }}
             />
           ) : (
-            <span className="hierarchy-name" title={group.name}>
+            <span title={group.name}>
               {group.name}
             </span>
-          )}
+          )}</span>
           <button
             title={group.visible ? "Hide group in simulation" : "Show group in simulation"}
             aria-label={group.visible ? "Hide group" : "Show group"}
@@ -5082,10 +5433,25 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
               return slice ? renderHierarchySlice(slice, depth + 1) : null;
             })}
             {childGroups.map((child) => renderHierarchyGroup(child, depth + 1))}
+            <ModelHierarchy {...modelControls} sceneGroupId={group.id} depthOffset={depth+1} query={hierarchyQuery} />
           </>
         )}
       </div>
     );
+  };
+
+  const renderScreenContainer=(screen:ResolumeScreen)=>{
+    const query=hierarchyQuery.toLowerCase();
+    const slices=screen.slices.filter(slice=>!groupedSliceIds.has(slice.id)&&(!query||screen.name.toLowerCase().includes(query)||(simulationLocalNames[slice.id]||slice.name).toLowerCase().includes(query)));
+    if(query&&!slices.length&&!screen.name.toLowerCase().includes(query))return null;
+    const acceptsDrop=hierarchyDrag?.kind==="slice"&&screen.slices.some(slice=>slice.id===hierarchyDrag.id)&&!simulationLockedIds.includes(hierarchyDrag.id);
+    return <div className="hierarchy-screen" key={screen.name}>
+      <div className={`hierarchy-row screen${screen.slices.some(slice=>selectedSliceIds.includes(slice.id))?" contains-selection":""}`} title="Resolume screen: only its original slices can return here"
+        onDragOver={event=>{event.stopPropagation();if(acceptsDrop){event.preventDefault();event.dataTransfer.dropEffect="move";}else event.dataTransfer.dropEffect="none";}}
+        onDrop={event=>{event.preventDefault();event.stopPropagation();if(acceptsDrop)dropHierarchyAtRoot();else{setNotice("Screen containers accept only their original Resolume slices");setHierarchyDrag(null);setHierarchyDrop(null);}}}>
+        <span className="hierarchy-type"><UiIcon name="screen" /></span><strong title={screen.name}>{screen.name}</strong><small title={`${screen.slices.length} linked Resolume slices`}>{slices.length}</small>
+      </div>{slices.map(slice=>renderHierarchySlice(slice,0))}
+    </div>;
   };
 
   if (uiVersion === "v070") {
@@ -5100,27 +5466,46 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       const query = v070ToolQuery.trim().toLocaleLowerCase();
       return !query || labels.some((label) => label.toLocaleLowerCase().includes(query));
     };
+    const reflectionControls = <div className={v070.hdriButtons} role="group" aria-label="Reflection environment">
+      {([1, 2, 3] as const).map(preset => <button key={preset} aria-pressed={simulationReflectionPreset === preset} className={simulationReflectionPreset === preset ? v070.active : ""} onClick={() => {
+        if (simulationReflectionPreset === preset) return;
+        recordSimulationHistory(`Change reflection to HDRI${preset}`); setSimulationReflectionPreset(preset);
+      }}>HDRI{preset}</button>)}
+    </div>;
     const sceneDisplayControls = <>
+{reflectionControls}
 <ToggleRow label="Floor" value={simulationFloorVisible} onClick={() => { recordSimulationHistory(simulationFloorVisible ? "Hide floor" : "Show floor"); setSimulationFloorVisible((value) => !value); }} styles={v070} />
                   <ToggleRow label="Grid" value={simulationGridVisible} onClick={() => { recordSimulationHistory(simulationGridVisible ? "Hide floor grid" : "Show floor grid"); setSimulationGridVisible((value) => !value); }} styles={v070} />
                   <ToggleRow label="Background brightness" value={simulationBackgroundLevel > 0} onClick={() => { recordSimulationHistory(simulationBackgroundLevel > 0 ? "Disable background brightness" : "Enable background brightness"); setSimulationBackgroundLevel((value) => value > 0 ? 0 : 100); }} styles={v070} />
                   {simulationBackgroundLevel > 0 && <div className={v070.range}><span>Brightness</span><ResetSlider aria-label="Background brightness" resetValue={100} min="1" max="200" value={simulationBackgroundLevel} onEditStart={() => recordSimulationHistory("Change background brightness")}  onValueChange={(value) => setSimulationBackgroundLevel(value)} /></div>}
     </>;
-    return <TransformSelectionScope.Provider value={isV0703D ? "v070-3d" : "v070-patterns"}>
+    return <TransformSelectionScope.Provider value={isV0703D ? `v080-3d:${modelSelection.join("|")}:${selectedGroupIds.join("|")}:${selectedSliceIds.join("|")}` : "v070-patterns"}>
+      {windowedOutputOpen && <WindowedOutput onClose={() => setWindowedOutputOpen(false)} scene={{
+        ...modelProps, slices: allSlices, compositionWidth: resolumeMap?.compositionWidth || config.resolutionWidth,
+        compositionHeight: resolumeMap?.compositionHeight || config.resolutionHeight, masterPitchMm: simulationMasterPitchMm,
+        bodyAppearanceBySlice:simulationBodyBySlice, pitchBySlice: simulationPitchBySlice, depthBySlice: simulationDepthBySlice, curvatureBySlice: simulationCurvatureBySlice,
+        pivotBySlice: simulationPivotBySlice, selectedIds: [], visibleIds: simulationVisibleIds, lockedIds: [],
+        transforms: renderedSimulationTransforms, transformMode: simulationTool, transformSpace: simulationTransformSpace,
+        source: simulationSource, sourceOverrides: simulationSourceOverrides, sourceMedia: simulationSourceMedia, sourceQuality: simulationQuality,
+        cameraState: simulationCamera, cameraMemory: simulationCameraMemory, textureVersion: simulationTextureVersion, fitSignal: 0, focusSignal: 0, viewMode: "perspective",
+        gridVisible: simulationGridVisible, floorVisible: simulationFloorVisible, backgroundLevel: simulationBackgroundLevel, reflectionPreset: simulationReflectionPreset,
+        interactiveGeometryPreview: simulationGeometryPreview, drawPatternTexture: drawSimulationTexture,
+        onSelectionChange: () => {}, onTransformPreview: () => {}, onTransformsChange: () => {}, onCameraChange: () => {},
+      }} />}
       <main className={`${v070.app} ${v070Focused ? v070.focused : ""}`} onClick={() => v070Menu && setV070Menu(null)}>
         <header className={v070.header}>
-          <div className={v070.brand}><img src={LO2S_LOGO_URL} alt="LO2S" /><i /><strong>OpticMesh</strong><span>v0.7.0</span><b>Beta</b></div>
+          {modelImportOpen && <ModelImportDialog onClose={() => setModelImportOpen(false)} onImport={model => { const next=[...importedModels,model]; if (JSON.stringify(next).length > projectLimits.modelAssetsMiB*1024*1024) { setNotice(`Imported assets exceed this project’s ${projectLimits.modelAssetsMiB} MiB portable size budget.`); return; } changeModels(next,"Import 3D model"); selectModels([model.nodes[0].id]); setHierarchyQuery(""); setV070InspectorTab("scene"); setModelImportOpen(false); setSimulationFitSignal(v=>v+1); setNotice("Imported " + model.name); }} />}<div className={v070.brand}><img src={LO2S_LOGO_URL} alt="LO2S" /><i /><strong>OpticMesh</strong><span>v{DISPLAY_VERSION}</span><b title={BUILD_DESCRIPTION}>{BUILD_BADGE}</b></div>
           <nav className={v070.menus}>{["File", "Export", "Output", "Tools", "Help", "About"].map((item) => <div key={item}
             onPointerEnter={(event) => { if (event.pointerType !== "touch") setV070Menu((current) => current === null ? null : item); }}
             onBlur={(event) => { if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) setV070Menu(null); }}
             onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`button[aria-controls="toolbar-menu-${(v070Menu || item).toLowerCase()}"]`)?.focus(); setV070Menu(null); } }}
           ><button aria-pressed={v070Menu === item} className={v070Menu === item ? v070.active : ""} aria-expanded={v070Menu === item} aria-controls={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); setV070Menu(v070Menu === item ? null : item); }}>{item}</button>{v070Menu === item && <section id={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); const action = (event.target as Element).closest("button"); if (action && !action.disabled) { event.currentTarget.parentElement?.querySelector<HTMLButtonElement>("button[aria-controls]")?.focus(); setV070Menu(null); } }}>
             {item === "File" && <><button onClick={createBlankProject}>New Project</button><button onClick={openDemoProject}>Open Demo</button><button onClick={openProject}>Open Project…</button><hr /><button onClick={() => void saveActiveProject()}>Save</button><button onClick={saveProject}>Save As…</button><button disabled={compilingProject || !resolumeMap || !rawXml} onClick={() => void compileProject()}>{compilingProject ? "Compiling…" : "Compile Project…"}</button><button onClick={() => void revealProjectsFolder()}>Reveal Projects Folder</button></>}
-            {item === "Export" && (isV0703D ? <><strong>3D scene formats</strong><button disabled={!allSlices.length || simulationExporting} onClick={() => void export3DScene("glb")}>GLB · Universal binary</button><button disabled={!allSlices.length || simulationExporting} onClick={() => void export3DScene("gltf")}>glTF · Packaged ZIP</button><button disabled={!allSlices.length || simulationExporting} onClick={() => void export3DScene("obj")}>Wavefront OBJ · Packaged ZIP</button><button disabled={!allSlices.length || simulationExporting} onClick={() => void export3DScene("mvr")}>MVR 1.5 · Scene meshes</button>{simulationExporting && <small>Building 3D export…</small>}</> : <><button onClick={exportCurrent}>{isV070Map ? mapView === "input" ? "Input Map PNG" : "Current Output PNG" : "Current Pattern PNG"}</button>{isV070Map && resolumeMap && <><button onClick={exportSelected} disabled={!selectedSlices.length}>Selected Slices</button><button onClick={exportOutputs}>All Output Maps</button></>}</>)}
-            {item === "Output" && <><button aria-pressed={patternOutput === "off"} className={patternOutput === "off" ? v070.active : ""} onClick={() => setPatternOutput("off")}>OFF</button><button aria-pressed={patternOutput === "ndi"} className={patternOutput === "ndi" ? v070.active : ""} onClick={() => setPatternOutput("ndi")}>NDI</button><button aria-pressed={patternOutput === "spout"} className={patternOutput === "spout" ? v070.active : ""} onClick={() => setPatternOutput("spout")}>Spout</button><hr /><small>{patternOutputStatus}</small></>}
+            {item === "Export" && (isV0703D ? <><strong>3D scene formats</strong><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("glb")}>GLB · Universal binary</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("gltf")}>glTF · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("obj")}>Wavefront OBJ · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("mvr")}>MVR 1.5 · Scene meshes</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("stl")}>STL · Geometry only</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("usdz")}>USDZ · Packaged scene</button>{simulationExporting && <small>Building 3D export…</small>}</> : <><button onClick={exportCurrent}>{isV070Map ? mapView === "input" ? "Input Map PNG" : "Current Output PNG" : "Current Pattern PNG"}</button>{isV070Map && resolumeMap && <><button onClick={exportSelected} disabled={!selectedSlices.length}>Selected Slices</button><button onClick={exportOutputs}>All Output Maps</button></>}</>)}
+            {item === "Output" && <><button aria-pressed={patternOutput === "off" && !windowedOutputOpen} className={patternOutput === "off" && !windowedOutputOpen ? v070.active : ""} onClick={() => { setPatternOutput("off"); setWindowedOutputOpen(false); }}>OFF</button><button aria-pressed={patternOutput === "ndi"} className={patternOutput === "ndi" ? v070.active : ""} onClick={() => setPatternOutput("ndi")}>NDI</button><button aria-pressed={patternOutput === "spout"} className={patternOutput === "spout" ? v070.active : ""} onClick={() => setPatternOutput("spout")}>Spout</button><hr /><button disabled={!isV0703D && !windowedOutputOpen} aria-pressed={windowedOutputOpen} title="Camera-only 3D preview" onClick={() => setWindowedOutputOpen((value) => !value)}>Windowed</button><small>{windowedOutputOpen ? "Windowed 3D preview open" : "Windowed is available in 3D"}</small><button disabled={!windowedOutputOpen} aria-pressed={pauseMainViewport} title="Stop drawing the main 3D viewport while Windowed output stays live" onClick={() => setMainViewportPaused(value => !value)}>Pause main viewport</button><hr /><small>{patternOutputStatus}</small></>}
             {item === "Tools" && <button onClick={() => { setV070Focused(false); setNotice(`${isV0703D ? "3D" : isV070Map ? "Pixel Map" : "Pattern"} tools are active in the left panel`); }}>{isV0703D ? "3D Tools" : isV070Map ? "Pixel Map Tools" : "Pattern Tools"}</button>}
             {item === "Help" && <><button onClick={() => setHelpTopic("manual")}>OpticMesh Manual</button><button onClick={() => setHelpTopic("shortcuts")}>Keyboard Shortcuts</button></>}
-            {item === "About" && <><strong>LO2S - OpticMesh</strong><small>Version 0.7.0 Beta</small></>}
+            {item === "About" && <><strong>LO2S - OpticMesh</strong><small>Version {DISPLAY_VERSION} · {BUILD_DESCRIPTION}</small></>}
           </section>}</div>)}</nav>
           <div className={v070.historyActions}><button title={historyState.undo ? `Undo · ${historyState.undo}` : "Undo"} disabled={!isV0703D || !historyState.undo} onClick={undoSimulation}>Undo{historyState.undo ? ` · ${historyState.undo}` : ""}</button><button title={historyState.redo ? `Redo · ${historyState.redo}` : "Redo"} disabled={!isV0703D || !historyState.redo} onClick={redoSimulation}>Redo{historyState.redo ? ` · ${historyState.redo}` : ""}</button></div>
         </header>
@@ -5131,14 +5516,15 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             <div className={v070.panelTitle}><strong>Tools</strong></div>
             <label className={v070.search}><UiIcon name="search" /><input value={v070ToolQuery} onChange={(event) => setV070ToolQuery(event.target.value)} placeholder="Search tools…" aria-label="Search tools" /></label>
             {isV0703D ? <>
+              <VSection title="3D models" styles={v070}><button className={v070.choose} onClick={() => setModelImportOpen(true)}>Import Model…</button></VSection>
               <VSection title="Scene source" styles={v070} query={v070ToolQuery} keywords={["Choose XML", "Load Demo"]}>
                 <button className={v070.choose} onClick={chooseXml}>Choose Resolume XML…</button>
                 <button className={v070.choose} onClick={loadDemoScene}>Load Demo Scene</button>
               </VSection>
               <ToolList title="Transform" items={[["Move", simulationTool === "translate", () => setSimulationTool("translate")], ["Rotate", simulationTool === "rotate", () => setSimulationTool("rotate")], ["Scale", simulationTool === "scale", () => setSimulationTool("scale")]]} styles={v070} query={v070ToolQuery} />
-              <ToolList title="Arrange" items={[["Group", false, groupSelectedSlices, !selectedSliceIds.length || hasGroupSelection], ["Ungroup", false, ungroupSelectedSlices, !hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))], ["Align", false, () => openArrangeControls("align"), selectedSliceIds.length < 2], ["Distribute", false, () => openArrangeControls("distribute"), selectedSliceIds.length < 3], ["Set Parent", false, () => { setV070InspectorTab("scene"); setNotice("Drag a slice or subgroup onto a group in Scene Hierarchy to set its parent"); }]]} styles={v070} query={v070ToolQuery} />
-              <ToolList title="View" items={[["All Views", simulationViewMode === "four", () => setSimulationViewMode("four")], ["Focus Selection", false, () => setSimulationFocusSignal((value) => value + 1), !selectedSliceIds.length], ["Fit Scene", false, () => { setSimulationViewMode("perspective"); setSimulationFitSignal((value) => value + 1); }]]} styles={v070} query={v070ToolQuery} />
-              <VSection title="Scene display" styles={v070} query={v070ToolQuery} keywords={["Floor", "Grid", "Background", "Brightness"]}>{sceneDisplayControls}</VSection>
+              <ToolList title="Arrange" items={[["Group", false, groupSelectedSlices, !modelSelection.length && !selectedSliceIds.length && !hasGroupSelection], ["Ungroup", false, ungroupSelectedSlices, !modelSelection.length && !hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))], ["Transfer", !!transferSource, () => setTransferSource(transferSource?null:transferCandidate), !transferAllowed], ["Set Parent", false, () => { setV070InspectorTab("scene"); setNotice("Drag slices, model parts or groups onto a group in Scene Hierarchy to set their parent"); }]]} styles={v070} query={v070ToolQuery} />
+              <ToolList title="View" items={[["All Views", simulationViewMode === "four", () => setSimulationViewMode("four")], ["Focus Selection", false, () => setSimulationFocusSignal((value) => value + 1), !selectedSliceIds.length && !modelSelection.length], ["Fit Scene", false, () => { setSimulationViewMode("perspective"); setSimulationFitSignal((value) => value + 1); }]]} styles={v070} query={v070ToolQuery} />
+              <VSection title="Scene display" styles={v070} query={v070ToolQuery} keywords={["Floor", "Grid", "Background", "Brightness", "HDRI", "Reflection"]}>{sceneDisplayControls}</VSection>
             </> : isV070Map ? <>
               <VSection title="Advanced Output XML" styles={v070} query={v070ToolQuery} keywords={["Choose XML", "Load Demo", "Link Resolume"]}>
                 <button className={v070.choose} onClick={chooseXml}>Choose XML…</button>
@@ -5150,12 +5536,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
               </VSection>
               <VSection title="Map display" styles={v070} query={v070ToolQuery} keywords={["Input Map", "Output Map", "Screen"]}>
                 <div className={v070.segmented}><button aria-pressed={mapView === "input"} className={mapView === "input" ? v070.active : ""} onClick={() => changeMapView("input")}>Input Map</button><button aria-pressed={mapView === "output"} className={mapView === "output" ? v070.active : ""} onClick={() => changeMapView("output")}>Output Map</button></div>
-                {resolumeMap && <label className={v070.select}><span>Screen</span><select value={mapView === "input" ? "combined" : selectedScreen} disabled={mapView === "input"} onChange={(event) => { setSelectedScreen(Number(event.target.value)); setSelectedSliceIds([]); resetView(); }}><option value="combined">All Screens</option>{mapView === "output" && resolumeMap.screens.map((screen, index) => <option value={index} key={screen.name}>{screen.name}</option>)}</select></label>}
+                {mapView === "output" && !!resolumeMap?.screens.length && <label className={v070.select}><span>Screen</span><select value={activeScreenIndex} onChange={(event) => { setSelectedScreen(Number(event.target.value)); setSelectedSliceIds([]); resetView(); }}>{resolumeMap.screens.map((screen, index) => <option value={index} key={screen.name}>{screen.name}</option>)}</select></label>}
               </VSection>
               <ToolList title="Selection" items={[["Select all slices", selectedSliceIds.length === activeSlices.length && activeSlices.length > 0, () => setSelectedSliceIds(activeSlices.map((slice) => slice.id)), !activeSlices.length], ["Select current screen", false, () => setSelectedSliceIds(activeScreen?.slices.map((slice) => slice.id) || []), mapView !== "output" || !activeScreen], ["Clear selection", false, () => setSelectedSliceIds([]), !selectedSliceIds.length]]} styles={v070} query={v070ToolQuery} />
               <ToolList title="Display" items={[["Slice labels", selectedBoolean("showLabels", config.showLabels), () => selectedSliceIds.length ? updateSelected({ showLabels: !selectedBoolean("showLabels", config.showLabels) }) : updateGlobal("showLabels", !config.showLabels)], ["Pixel grid", selectedBoolean("showPixelGrid", config.showPixelGrid), () => selectedSliceIds.length ? updateSelected({ showPixelGrid: !selectedBoolean("showPixelGrid", config.showPixelGrid) }) : updateGlobal("showPixelGrid", !config.showPixelGrid)]]} styles={v070} query={v070ToolQuery} />
               {v070ToolMatches("Pattern mode", "Per Slice", "Across Map") && <section className={v070.fill}><h2>Pattern mode</h2><div className={v070.scope}><button aria-pressed={config.mapPatternScope === "slice"} className={config.mapPatternScope === "slice" ? v070.active : ""} onClick={() => updateGlobal("mapPatternScope", "slice")}>Per Slice</button><button aria-pressed={config.mapPatternScope === "map"} className={config.mapPatternScope === "map" ? v070.active : ""} onClick={() => updateGlobal("mapPatternScope", "map")}>Across Map</button></div></section>}
-              {v070ToolMatches("Pattern fill", ...MAP_FILLS.map((fill) => fill.name)) && <section className={v070.fill}><h2>Pattern fill</h2><div>{MAP_FILLS.map((fill) => <button key={fill.id} aria-pressed={config.mapFill === fill.id} className={config.mapFill === fill.id ? v070.active : ""} onClick={() => updateGlobal("mapFill", fill.id)}>{fill.name}</button>)}</div></section>}
+              {v070ToolMatches("Pattern fill", "Run test sequence", ...MAP_FILLS.map((fill) => fill.name)) && <section className={v070.fill}><h2>Pattern fill</h2><div>{MAP_FILLS.map((fill) => <button key={fill.id} aria-pressed={config.mapFill === fill.id} className={config.mapFill === fill.id ? v070.active : ""} onClick={() => updateGlobal("mapFill", fill.id)}>{fill.name}</button>)}</div><div className={v070.fillSequence}><ToggleRow label="Run test sequence" value={mapSequenceActive} onClick={() => setMapSequenceActive((value) => !value)} disabled={!resolumeMap} styles={v070} /></div></section>}
             </> : <>
               <ToolList title="Pattern elements" items={isDome ? [["Angular Grid", config.domeShowGrid, () => update("domeShowGrid", !config.domeShowGrid)], ["Concentric Rings", config.domeShowRings, () => update("domeShowRings", !config.domeShowRings)], ["Centre Mark", config.domeShowCenterDot, () => update("domeShowCenterDot", !config.domeShowCenterDot)], ["Safe Area", config.domeShowSafeArea, () => update("domeShowSafeArea", !config.domeShowSafeArea)]] : isCubemap ? [["Perspective Grid", config.cubemapShowGrid, () => update("cubemapShowGrid", !config.cubemapShowGrid)], ["Face Edges", config.cubemapShowSeams, () => update("cubemapShowSeams", !config.cubemapShowSeams)]] : [["Resolution Grid", patternStyle.showMetricGrid, () => updatePatternStyle("showMetricGrid", !patternStyle.showMetricGrid)], ["Centre Mark", patternStyle.showCenterDot, () => updatePatternStyle("showCenterDot", !patternStyle.showCenterDot)], ["Safe Area", patternStyle.showSafeArea, () => updatePatternStyle("showSafeArea", !patternStyle.showSafeArea)]]} styles={v070} query={v070ToolQuery} />
               <ToolList title="Identification" items={isDome ? [["Compass", config.domeCompass, () => update("domeCompass", !config.domeCompass)], ["Degree Labels", config.domeDegreeLabels, () => update("domeDegreeLabels", !config.domeDegreeLabels)], ["Elevation Angles", config.domeElevationAngles, () => update("domeElevationAngles", !config.domeElevationAngles)], ["Logo", config.domeShowLogo, () => update("domeShowLogo", !config.domeShowLogo)]] : isCubemap ? [["Face Labels", config.cubemapShowFaceLabels, () => update("cubemapShowFaceLabels", !config.cubemapShowFaceLabels)], ["Directional Logo", config.cubemapShowLogo, () => update("cubemapShowLogo", !config.cubemapShowLogo)]] : [["Project title", patternStyle.showPatternTitle, () => updatePatternStyle("showPatternTitle", !patternStyle.showPatternTitle)], ["Dimensions", patternStyle.showPatternDimensions, () => updatePatternStyle("showPatternDimensions", !patternStyle.showPatternDimensions)], ["Cardinal Labels", patternStyle.showCardinalLabels, () => updatePatternStyle("showCardinalLabels", !patternStyle.showCardinalLabels)], ["Logo", config.showLogo, () => update("showLogo", !config.showLogo)]]} styles={v070} query={v070ToolQuery} />
@@ -5163,25 +5549,27 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
               {v070ToolMatches("Dome background", "Cubemap pattern", "Pattern fill", ...DOME_BACKGROUND_OPTIONS.map((option) => option.label), "Environment Grid", "Axis Face IDs", "Texel Check", "Metric Grid", "Cabinet IDs", "Color Bars", "Pixel Check") && <section className={v070.fill}><h2>{isDome ? "Dome background" : isCubemap ? "Cubemap pattern" : "Pattern fill"}</h2>{isDome ? <><div>{DOME_BACKGROUND_OPTIONS.map((option) => <button key={option.id} aria-pressed={config.domeBackground === option.id} className={config.domeBackground === option.id ? v070.active : ""} onClick={() => update("domeBackground", option.id)}>{option.label}</button>)}</div>{config.domeBackground === "custom" && <label className={v070.colorWide}><span>Custom colour</span><input type="color" value={config.domeBackgroundColor} onChange={(event) => update("domeBackgroundColor", event.target.value)} /></label>}</> : <div>{PATTERNS.filter((pattern) => !isCubemap || pattern.id !== "cabinet").map((pattern) => <button key={pattern.id} aria-pressed={config.pattern === pattern.id} className={config.pattern === pattern.id ? v070.active : ""} onClick={() => selectPattern(pattern.id)}>{isCubemap ? pattern.id === "metric" ? "Environment Grid" : pattern.id === "color" ? "Axis Face IDs" : pattern.id === "gray" ? "Grayscale" : "Texel Check" : pattern.name}</button>)}</div>}</section>}
             </>}
           </aside>
-          <section className={`${v070.center} ${v070DiagnosticTab === "performance" ? v070.performanceCenter : ""} ${isV0703D ? v070.threeCenter : ""} ${isV070Map ? v070.mapCenter : ""} ${!v070DiagnosticsOpen ? v070.collapsedCenter : ""}`}>
-            <div className={v070.toolbar}><div className={v070.contextControls}>{isV0703D ? <><button aria-pressed={simulationTool === "translate"} className={simulationTool === "translate" ? v070.active : ""} onClick={() => setSimulationTool("translate")}>Move</button><button aria-pressed={simulationTool === "rotate"} className={simulationTool === "rotate" ? v070.active : ""} onClick={() => setSimulationTool("rotate")}>Rotate</button><button aria-pressed={simulationTool === "scale"} className={simulationTool === "scale" ? v070.active : ""} onClick={() => setSimulationTool("scale")}>Scale</button><button aria-pressed={simulationSnapEnabled} className={simulationSnapEnabled ? v070.active : ""} title="Snap movement to the 1 metre world grid" onClick={() => { recordSimulationHistory(simulationSnapEnabled ? "Disable grid snap" : "Enable grid snap"); setSimulationSnapEnabled(value => !value); }}>Snap</button><button aria-pressed={simulationTransformSpace === "local"} className={simulationTransformSpace === "local" ? v070.active : ""} onClick={() => setSimulationTransformSpace("local")}>Local</button><button aria-pressed={simulationTransformSpace === "world"} className={simulationTransformSpace === "world" ? v070.active : ""} onClick={() => setSimulationTransformSpace("world")}>World</button></> : isV070Map ? <><button aria-pressed={mapView === "input"} className={mapView === "input" ? v070.active : ""} onClick={() => changeMapView("input")}>Input Map</button><button aria-pressed={mapView === "output"} className={mapView === "output" ? v070.active : ""} onClick={() => changeMapView("output")}>Output Map</button><button onClick={() => setV070InspectorTab("source")}>All Screens</button></> : PROJECTION_FORMATS.map((format) => <button key={format.id} aria-pressed={config.projectionFormat === format.id} className={config.projectionFormat === format.id ? v070.active : ""} onClick={() => selectProjectionFormat(format.id)}>{format.name}</button>)}</div><div className={v070.viewControls}>{isV0703D ? <><select className={v070.cameraSelect} aria-label="Camera view" value={simulationViewMode} onChange={(event) => setSimulationViewMode(event.target.value as SimulationView)}><option value="perspective">Perspective</option><option value="top">Top</option><option value="right">Right</option><option value="front">Front</option><option value="four">All Views</option></select><span className={v070.cameraButtons}><button aria-pressed={simulationViewMode === "perspective"} className={simulationViewMode === "perspective" ? v070.active : ""} onClick={() => setSimulationViewMode("perspective")}>Perspective</button><button aria-pressed={simulationViewMode === "top"} className={simulationViewMode === "top" ? v070.active : ""} onClick={() => setSimulationViewMode("top")}>Top</button><button aria-pressed={simulationViewMode === "right"} className={simulationViewMode === "right" ? v070.active : ""} onClick={() => setSimulationViewMode("right")}>Right</button><button aria-pressed={simulationViewMode === "front"} className={simulationViewMode === "front" ? v070.active : ""} onClick={() => setSimulationViewMode("front")}>Front</button><button aria-pressed={simulationViewMode === "four"} className={simulationViewMode === "four" ? v070.active : ""} onClick={() => setSimulationViewMode("four")}>All Views</button></span><button disabled={!selectedSliceIds.length} onClick={() => setSimulationFocusSignal((value) => value + 1)}>Focus</button><button onClick={() => setSimulationFitSignal((value) => value + 1)}>Fit Scene</button></> : <><button aria-pressed={fullscreenMode === "fit"} className={fullscreenMode === "fit" ? v070.active : ""} onClick={resetView}>Fit Canvas</button><button aria-pressed={fullscreenMode === "actual"} className={fullscreenMode === "actual" ? v070.active : ""} onClick={actualPixels}>Actual 1:1</button></>}<button onClick={enterFullscreen} aria-label="Fullscreen viewport" title="Fullscreen viewport"><UiIcon name="fullscreen" /></button></div></div>
-            <div className={v070.canvasShell} ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>{isV0703D ? <ThreeSimulation performanceMetrics={renderMetrics.simulation} slices={allSlices} compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth} compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight} masterPitchMm={simulationMasterPitchMm} pitchBySlice={simulationPitchBySlice} depthBySlice={simulationDepthBySlice} curvatureBySlice={simulationCurvatureBySlice} pivotBySlice={simulationPivotBySlice} selectedIds={selectedSliceIds} visibleIds={simulationVisibleIds} lockedIds={simulationLockedIds} transforms={renderedSimulationTransforms} selectionTransform={selectedGroupSelectionWorldTransform} transformMode={simulationTool} transformSpace={simulationTransformSpace} source={simulationSource} sourceOverrides={simulationSourceOverrides} sourceMedia={simulationSourceMedia} sourceQuality={simulationQuality} cameraState={simulationCamera} textureVersion={simulationTextureVersion} fitSignal={simulationFitSignal} focusSignal={simulationFocusSignal} viewMode={simulationViewMode} snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible} floorVisible={simulationFloorVisible} backgroundLevel={simulationBackgroundLevel} interactiveGeometryPreview={simulationGeometryPreview} drawPatternTexture={drawSimulationTexture} onSelectionChange={(ids) => { setSimulationTransformPreview(null); setSelectedGroupIds([]); setSelectedSliceIds(ids); }} onTransformPreview={setSimulationTransformPreview} onTransformsChange={commitSimulationTransforms} onCameraChange={setSimulationCamera} onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }} /> : <div ref={canvasStageRef} className={`canvas-stage ${spaceDown ? "panning" : ""}`} onPointerDown={beginInteraction} onPointerMove={moveInteraction} onPointerUp={endInteraction} onPointerCancel={cancelInteraction} onWheel={(event) => { event.preventDefault(); adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY); }}><canvas ref={canvasRef} style={{ width: `${outputWidth * baseScale}px`, height: `${outputHeight * baseScale}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, imageRendering: fullscreenMode === "actual" && displayScale >= 1 ? "pixelated" : "auto" }} aria-label="LO2S - OpticMesh 0.7 live pattern output" /></div>}</div>
+          <section className={`${v070.center} ${v070DiagnosticTab === "performance" ? v070.performanceCenter : ""} ${isV0703D && v070DiagnosticTab === "material" ? v070.materialCenter : ""} ${isV0703D ? v070.threeCenter : ""} ${isV070Map ? v070.mapCenter : ""} ${!v070DiagnosticsOpen ? v070.collapsedCenter : ""}`}>
+            <div className={v070.toolbar}><div className={v070.contextControls}>{isV0703D ? <><button title="Move (E)" aria-label="Move" aria-pressed={simulationTool === "translate"} className={`${v070.iconButton} ${simulationTool === "translate" ? v070.active : ""}`} onClick={() => setSimulationTool("translate")}><UiIcon name="move" /></button><button title="Rotate (R)" aria-label="Rotate" aria-pressed={simulationTool === "rotate"} className={`${v070.iconButton} ${simulationTool === "rotate" ? v070.active : ""}`} onClick={() => setSimulationTool("rotate")}><UiIcon name="rotate" /></button><button title="Scale (T) — hold Shift while dragging for proportional scaling" aria-label="Scale" aria-pressed={simulationTool === "scale"} className={`${v070.iconButton} ${simulationTool === "scale" ? v070.active : ""}`} onClick={() => setSimulationTool("scale")}><UiIcon name="scale" /></button><button aria-label="Snap" aria-pressed={simulationSnapEnabled} className={`${v070.iconButton} ${simulationSnapEnabled ? v070.active : ""}`} title="Snap movement to the 1 metre world grid" onClick={() => { recordSimulationHistory(simulationSnapEnabled ? "Disable grid snap" : "Enable grid snap"); setSimulationSnapEnabled(value => !value); }}><UiIcon name="snap" /></button><button title="Local coordinate system" aria-label="Local" aria-pressed={simulationTransformSpace === "local"} className={`${v070.iconButton} ${simulationTransformSpace === "local" ? v070.active : ""}`} onClick={() => setSimulationTransformSpace("local")}><UiIcon name="local" /></button><button title="World coordinate system" aria-label="World" aria-pressed={simulationTransformSpace === "world"} className={`${v070.iconButton} ${simulationTransformSpace === "world" ? v070.active : ""}`} onClick={() => setSimulationTransformSpace("world")}><UiIcon name="world" /></button></> : isV070Map ? <><button aria-pressed={mapView === "input"} className={mapView === "input" ? v070.active : ""} onClick={() => changeMapView("input")}>Input Map</button><button aria-pressed={mapView === "output"} className={mapView === "output" ? v070.active : ""} onClick={() => changeMapView("output")}>Output Map</button></> : PROJECTION_FORMATS.map((format) => <button key={format.id} aria-pressed={config.projectionFormat === format.id} className={config.projectionFormat === format.id ? v070.active : ""} onClick={() => selectProjectionFormat(format.id)}>{format.name}</button>)}</div><div className={v070.viewControls}>{isV0703D ? <><select className={v070.cameraSelect} aria-label="Camera view" value={simulationViewMode} onChange={(event) => setSimulationViewMode(event.target.value as SimulationView)}><option value="perspective">Perspective</option><option value="top">Top</option><option value="right">Right</option><option value="front">Front</option><option value="four">All Views</option></select><span className={v070.cameraButtons}><button aria-pressed={simulationViewMode === "perspective"} className={simulationViewMode === "perspective" ? v070.active : ""} onClick={() => setSimulationViewMode("perspective")}>Perspective</button><button aria-pressed={simulationViewMode === "top"} className={simulationViewMode === "top" ? v070.active : ""} onClick={() => setSimulationViewMode("top")}>Top</button><button aria-pressed={simulationViewMode === "right"} className={simulationViewMode === "right" ? v070.active : ""} onClick={() => setSimulationViewMode("right")}>Right</button><button aria-pressed={simulationViewMode === "front"} className={simulationViewMode === "front" ? v070.active : ""} onClick={() => setSimulationViewMode("front")}>Front</button><button aria-pressed={simulationViewMode === "four"} className={simulationViewMode === "four" ? v070.active : ""} onClick={() => setSimulationViewMode("four")}>All Views</button></span><button disabled={!selectedSliceIds.length && !modelSelection.length} onClick={() => setSimulationFocusSignal((value) => value + 1)}>Focus</button><button onClick={() => setSimulationFitSignal((value) => value + 1)}>Fit Scene</button></> : <><button aria-pressed={fullscreenMode === "fit"} className={fullscreenMode === "fit" ? v070.active : ""} onClick={resetView}>Fit Canvas</button><button aria-pressed={fullscreenMode === "actual"} className={fullscreenMode === "actual" ? v070.active : ""} onClick={actualPixels}>Actual 1:1</button></>}<button onClick={enterFullscreen} aria-label="Fullscreen viewport" title="Fullscreen viewport"><UiIcon name="fullscreen" /></button></div></div>
+            <div className={v070.canvasShell} ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>{isV0703D && pauseMainViewport && <div className={v070.viewportPauseOverlay}><strong>Main viewport paused</strong><span>Windowed output stays live. Scene edits continue to update it.</span><button onClick={() => setMainViewportPaused(false)}>Resume viewport</button></div>}<RetainedWorkspace key={simulationCameraSession} active={isV0703D}><ThreeSimulation key={simulationCameraSession} cameraMemory={simulationCameraMemory} transferActive={!!transferSource} onTransferTarget={transferToTarget} renderPaused={!isV0703D || pauseMainViewport} outputActive={isV0703D && patternOutput !== "off"} bodyAppearanceBySlice={simulationBodyBySlice} {...modelProps} performanceMetrics={renderMetrics.simulation} slices={allSlices} compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth} compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight} masterPitchMm={simulationMasterPitchMm} pitchBySlice={simulationPitchBySlice} depthBySlice={simulationDepthBySlice} curvatureBySlice={simulationCurvatureBySlice} pivotBySlice={simulationPivotBySlice} selectedIds={selectedSliceIds} visibleIds={simulationVisibleIds} lockedIds={simulationLockedIds} transforms={groupModelPreview ? {...renderedSimulationTransforms,...simulationTransformPreview} : renderedSimulationTransforms} selectionTransform={selectedGroupSelectionWorldTransform} transformMode={simulationTool} transformSpace={simulationTransformSpace} source={simulationSource} sourceOverrides={simulationSourceOverrides} sourceMedia={simulationSourceMedia} sourceQuality={simulationQuality} cameraState={simulationCamera} textureVersion={simulationTextureVersion} fitSignal={simulationFitSignal} focusSignal={simulationFocusSignal} viewMode={simulationViewMode} snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible} floorVisible={simulationFloorVisible} backgroundLevel={simulationBackgroundLevel} reflectionPreset={simulationReflectionPreset} interactiveGeometryPreview={simulationGeometryPreview} drawPatternTexture={drawSimulationTexture} onSelectionChange={(ids,additive) => { if(!additive)setModelSelection([]); setSimulationTransformPreview(null); setSelectedGroupIds([]); setSelectedSliceIds(ids); }} onTransformPreview={setSimulationTransformPreview} onTransformsChange={commitSimulationTransforms} onCameraChange={publishSimulationCamera} onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }} /></RetainedWorkspace>{!isV0703D && <div ref={canvasStageRef} className={`canvas-stage ${spaceDown ? "panning" : ""} ${emptyPixelMap ? "map-empty-stage" : ""}`} onPointerDown={beginInteraction} onPointerMove={moveInteraction} onPointerUp={endInteraction} onPointerCancel={cancelInteraction} onWheel={(event) => { event.preventDefault(); adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY); }}>{emptyPixelMap && <div className="map-empty" role="status"><strong>Import a Resolume XML map</strong><span>Your input and output maps will appear here.</span></div>}<canvas ref={canvasRef} aria-hidden={emptyPixelMap || undefined} style={{ visibility: emptyPixelMap ? "hidden" : undefined, width: `${outputWidth * baseScale}px`, height: `${outputHeight * baseScale}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, imageRendering: fullscreenMode === "actual" && displayScale >= 1 ? "pixelated" : "auto" }} aria-label="LO2S - OpticMesh 0.7 live pattern output" /></div>}</div>
             <div className={`${v070.diagnostics} ${isV070Map ? v070.mapDiagnostics : ""}`}>
+              {isV0703D && <button aria-pressed={v070DiagnosticTab === "material"} className={v070DiagnosticTab === "material" ? v070.active : ""} onClick={()=>{setV070DiagnosticTab("material");setV070DiagnosticsOpen(true);}}>Material</button>}
               <button aria-pressed={v070DiagnosticTab === "validation"} className={v070DiagnosticTab === "validation" ? v070.active : ""} onClick={() => { setV070DiagnosticTab("validation"); setV070DiagnosticsOpen(true); }}>Validation <b>{isV0703D ? invalidCurvedDepthSlices.length : isV070Map ? validations.length : stats.mismatch || stats.cabinetRemainder ? 1 : 0}</b></button>
               {isV070Map && <button aria-pressed={v070DiagnosticTab === "changes"} className={v070DiagnosticTab === "changes" ? v070.active : ""} onClick={() => { setV070DiagnosticTab("changes"); setV070DiagnosticsOpen(true); }}>Map Changes <b>{pendingXmlUpdate ? pendingMapChanges.added + pendingMapChanges.removed + pendingMapChanges.changed : 0}</b></button>}
               <button aria-pressed={v070DiagnosticTab === "output"} className={v070DiagnosticTab === "output" ? v070.active : ""} onClick={() => { setV070DiagnosticTab("output"); setV070DiagnosticsOpen(true); }}>Output <b>{patternOutput.toUpperCase()}</b></button>
               <button aria-pressed={v070DiagnosticTab === "performance"} className={v070DiagnosticTab === "performance" ? v070.active : ""} onClick={() => { setV070DiagnosticTab("performance"); setV070DiagnosticsOpen(true); }}>Performance</button>
               <button className={v070.diagnosticToggle} onClick={() => setV070DiagnosticsOpen((value) => !value)} aria-label={v070DiagnosticsOpen ? "Minimize bottom panel" : "Expand bottom panel"}><UiIcon name={v070DiagnosticsOpen ? "down" : "up"} /></button>
-              {v070DiagnosticsOpen && <section>
-                {v070DiagnosticTab === "validation" && (isV070Map ? <div className={v070.validationRows}>{resolumeMap ? validations.map((item, index) => <button key={`${item.text}-${index}`} className={v070[item.level]} title={item.details} data-tooltip={item.details} onClick={() => { const affected = allSlices.filter((slice) => item.details.includes(`${slice.screenName} / ${slice.name}`)).map((slice) => slice.id); if (affected.length) { setSelectedSliceIds(affected); setV070InspectorTab("geometry"); } }}><i /><span><b>{item.text}</b><small>{item.details}</small></span>{item.level === "warn" && <em>Focus</em>}</button>) : <p>Choose or link a Resolume Advanced Output XML to begin.</p>}</div> : isV0703D ? <><span>{invalidCurvedDepthSlices.length ? `${invalidCurvedDepthSlices.length} curved screen${invalidCurvedDepthSlices.length === 1 ? "" : "s"} exceed the safe extrusion radius.` : allSlices.length ? "Scene geometry is valid for editing and export." : "Choose a Resolume XML map to build the 3D scene."}</span><strong>{allSlices.length} screens</strong></> : <><span>{stats.mismatch ? "Pixel pitch differs between axes." : stats.cabinetRemainder ? "Wall dimensions do not resolve to complete cabinets." : "Pattern geometry and raster relationship are ready."}</span><strong>{outputWidth} × {outputHeight} px</strong></>)}
+              {v070DiagnosticsOpen && <section className={isV0703D && v070DiagnosticTab === "material" ? v070.materialContent : ""}>
+                {isV0703D && v070DiagnosticTab === "material" && <ModelMaterialPanel key={materialSelection.join("|")} extrusion={!materialHasModels} mixed={materialHasModels&&materialHasBodies} defaults={materialHasModels?undefined:DEFAULT_BODY_MATERIAL} models={[bodyMaterialModel,...effectiveModels]} selected={materialSelection} onChange={(models,label)=>{recordSimulationHistory(label);previewSceneMaterials(models);}} onEditStart={()=>recordSimulationHistory("Change material")} onPreview={previewSceneMaterials} />}
+                {v070DiagnosticTab === "validation" && (isV070Map ? <div className={v070.validationRows}>{resolumeMap ? validations.map((item, index) => <button key={`${item.text}-${index}`} className={v070[item.level]} title={item.details} data-tooltip={item.details} onClick={() => { const affected = allSlices.filter((slice) => item.details.includes(`${slice.screenName} / ${slice.name}`)).map((slice) => slice.id); if (affected.length) { setSelectedSliceIds(affected); setV070InspectorTab("geometry"); } }}><i /><span><b>{item.text}</b><small>{item.details}</small></span>{item.level === "warn" && <em>Focus</em>}</button>) : <p>Choose or link a Resolume Advanced Output XML to begin.</p>}</div> : isV0703D ? <><span>{invalidCurvedDepthSlices.length ? `${invalidCurvedDepthSlices.length} curved screen${invalidCurvedDepthSlices.length === 1 ? "" : "s"} exceed the safe extrusion radius.` : allSlices.length ? "Scene geometry is valid for editing and export." : importedModels.length ? "Imported stage geometry is ready. Add LED screens through Resolume XML." : "Choose a Resolume XML map or import a 3D model."}</span><strong>{allSlices.length} screens</strong></> : <><span>{stats.mismatch ? "Pixel pitch differs between axes." : stats.cabinetRemainder ? "Wall dimensions do not resolve to complete cabinets." : "Pattern geometry and raster relationship are ready."}</span><strong>{outputWidth} × {outputHeight} px</strong></>)}
                 {v070DiagnosticTab === "changes" && isV070Map && (pendingXmlUpdate ? <><span>{pendingXmlUpdate.name} · {pendingMapChanges.added} added · {pendingMapChanges.removed} removed · {pendingMapChanges.changed} changed</span><div className={v070.diagnosticActions}><button onClick={() => { const update = pendingXmlUpdate; applyXmlText(update.xml, update.name, { linked: true, path: update.path, mtimeMs: update.mtimeMs }); setV070DiagnosticTab("validation"); }}>Apply update</button><button onClick={() => { setPendingXmlUpdate(null); setV070DiagnosticTab("validation"); setNotice("Kept the current map"); }}>Keep current</button></div></> : <><span>The linked map matches the current project.</span><strong>No pending changes</strong></>)}
                 {v070DiagnosticTab === "output" && <><span>{patternOutputStatus}</span><strong>{patternOutput === "off" ? "Streaming disabled" : isV0703D ? `${simulationOutputSize().width} × ${simulationOutputSize().height} px · max ${SIMULATION_OUTPUT_FPS} fps` : `${outputWidth} × ${outputHeight} px`}</strong></>}
-                {v070DiagnosticTab === "performance" && <PerformancePanel key={workspaceMode} metrics={renderMetrics[workspaceMode]} three={isV0703D} />}
+                {v070DiagnosticTab === "performance" && <PerformancePanel key={workspaceMode} metrics={renderMetrics[workspaceMode]} three={isV0703D} paused={isV0703D && pauseMainViewport} />}
               </section>}
             </div>
           </section>
           <aside className={v070.inspector}>
-            <div className={v070.selection}><span>{isV0703D ? hasGroupSelection ? "Group selection" : selectedSlices.length ? "Slice selection" : "3D scene" : isV070Map ? selectedSlices.length ? "Selected object" : "Pixel map" : "Pattern format"}</span><strong title={isV0703D ? selectedGroup?.name || (hasGroupSelection ? `${selectedGroups.length} groups` : selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} screens selected` : resolumeMap?.name || "No scene loaded") : isV070Map ? selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} slices selected` : resolumeMap?.name || "No XML loaded" : isDome || isCubemap ? `${projectionName} · ${outputWidth} × ${outputHeight}` : `${projectionName} · ${patternName}`}>{isV0703D ? selectedGroup?.name || (hasGroupSelection ? `${selectedGroups.length} groups` : selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} screens selected` : resolumeMap?.name || "No scene loaded") : isV070Map ? selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} slices selected` : resolumeMap?.name || "No XML loaded" : isDome || isCubemap ? `${projectionName} · ${outputWidth} × ${outputHeight}` : `${projectionName} · ${patternName}`}</strong></div>
+            <div className={v070.selection}><span>{isV0703D ? modelSelection.length ? "Model selection" : hasGroupSelection ? "Group selection" : selectedSlices.length ? "Slice selection" : "3D scene" : isV070Map ? selectedSlices.length ? "Selected object" : "Pixel map" : "Pattern format"}</span><strong title={isV0703D ? importedModels.flatMap(m=>m.nodes).find(n=>modelSelection.includes(n.id))?.name || selectedGroup?.name || (hasGroupSelection ? `${selectedGroups.length} groups` : selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} screens selected` : resolumeMap?.name || (importedModels.length ? `${importedModels.length} imported model${importedModels.length===1?"":"s"}` : "No scene loaded")) : isV070Map ? selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} slices selected` : resolumeMap?.name || "No XML loaded" : isDome || isCubemap ? `${projectionName} · ${outputWidth} × ${outputHeight}` : `${projectionName} · ${patternName}`}>{isV0703D ? importedModels.flatMap(m=>m.nodes).find(n=>modelSelection.includes(n.id))?.name || selectedGroup?.name || (hasGroupSelection ? `${selectedGroups.length} groups` : selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} screens selected` : resolumeMap?.name || (importedModels.length ? `${importedModels.length} imported model${importedModels.length===1?"":"s"}` : "No scene loaded")) : isV070Map ? selectedSlices.length === 1 ? selectedSlices[0].name : selectedSlices.length > 1 ? `${selectedSlices.length} slices selected` : resolumeMap?.name || "No XML loaded" : isDome || isCubemap ? `${projectionName} · ${outputWidth} × ${outputHeight}` : `${projectionName} · ${patternName}`}</strong></div>
             <nav style={{ gridTemplateColumns: `repeat(${v070Tabs.length}, minmax(0, 1fr))` }}>{v070Tabs.map((item) => <button aria-pressed={v070InspectorTab === item} className={v070InspectorTab === item ? v070.active : ""} key={item} onClick={() => setV070InspectorTab(item)}>{item === "information" ? "Info" : item === "appearance" ? "Style" : item === "overlays" ? "Overlays" : item}</button>)}</nav>
             <div className={v070.inspectorScroll}>
               {!isV070Map && !isV0703D && v070InspectorTab === "setup" && <>
@@ -5275,16 +5663,18 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
               {!isV070Map && !isV0703D && v070InspectorTab === "logo" && <VSection title={isDome ? "Dome logo" : isCubemap ? "Cubemap logo" : "Logo"} styles={v070}><button title={logoName || "Choose custom logo"} className={v070.choose} onClick={() => logoInputRef.current?.click()}>{logoName || "Choose custom logo…"}</button><input ref={logoInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => loadLogo(event.target.files?.[0])} />{isDome ? <><ToggleRow label="Logo visible" value={config.domeShowLogo} onClick={() => update("domeShowLogo", !config.domeShowLogo)} styles={v070} /><ExpressionField label="Azimuth" value={config.domeLogoAzimuth} suffix="°" min={0} max={360} onCommit={(value) => update("domeLogoAzimuth", ((value % 360) + 360) % 360)} /><ExpressionField label="Elevation" value={config.domeLogoElevation} suffix="°" min={0} max={90} onCommit={(value) => update("domeLogoElevation", clamp(value, 0, 90))} /><div className={v070.range}><span>Logo size · {config.domeLogoScale}%</span><ResetSlider aria-label="Dome Logo Scale" resetValue={DEFAULT_CONFIG.domeLogoScale} min="25" max="200" value={config.domeLogoScale} onValueChange={(value) => update("domeLogoScale", value)} /></div><PreciseNumberInput label="Logo size" min={25} max={200} value={config.domeLogoScale} onChange={(value) => update("domeLogoScale", value)} /><div className={v070.range}><span>Opacity</span><ResetSlider aria-label="Dome Logo Opacity" resetValue={DEFAULT_CONFIG.domeLogoOpacity} min="10" max="100" value={config.domeLogoOpacity} onValueChange={(value) => update("domeLogoOpacity", value)} /></div><PreciseNumberInput label="Opacity" min={10} max={100} value={config.domeLogoOpacity} onChange={(value) => update("domeLogoOpacity", value)} /><div className={v070.readout}><span>Placement</span><strong>{config.domeLogoAzimuth.toFixed(1)}° AZ · {config.domeLogoElevation.toFixed(1)}° EL · {config.domeLogoScale}%</strong></div></> : isCubemap ? <><ToggleRow label="Logo visible" value={config.cubemapShowLogo} onClick={() => update("cubemapShowLogo", !config.cubemapShowLogo)} styles={v070} /><ExpressionField label="Azimuth" value={config.cubemapLogoAzimuth} suffix="°" min={0} max={360} onCommit={(value) => update("cubemapLogoAzimuth", ((value % 360) + 360) % 360)} /><ExpressionField label="Elevation" value={config.cubemapLogoElevation} suffix="°" min={-90} max={90} onCommit={(value) => update("cubemapLogoElevation", clamp(value, -90, 90))} /><div className={v070.range}><span>Angular size · {config.cubemapLogoAngularWidth}°</span><ResetSlider aria-label="Cubemap Logo Angular Width" resetValue={DEFAULT_CONFIG.cubemapLogoAngularWidth} min="5" max="120" value={config.cubemapLogoAngularWidth} onValueChange={(value) => update("cubemapLogoAngularWidth", value)} /></div><PreciseNumberInput label="Angular size" min={5} max={120} value={config.cubemapLogoAngularWidth} onChange={(value) => update("cubemapLogoAngularWidth", value)} /><div className={v070.range}><span>Opacity</span><ResetSlider aria-label="Cubemap Logo Opacity" resetValue={DEFAULT_CONFIG.cubemapLogoOpacity} min="10" max="100" value={config.cubemapLogoOpacity} onValueChange={(value) => update("cubemapLogoOpacity", value)} /></div><PreciseNumberInput label="Opacity" min={10} max={100} value={config.cubemapLogoOpacity} onChange={(value) => update("cubemapLogoOpacity", value)} /><div className={v070.readout}><span>Direction</span><strong>{config.cubemapLogoAzimuth.toFixed(1)}° AZ · {config.cubemapLogoElevation.toFixed(1)}° EL</strong></div></> : <><ToggleRow label="Logo visible" value={config.showLogo} onClick={() => update("showLogo", !config.showLogo)} styles={v070} /><label className={v070.select}><span>Position</span><select value={config.customLogoPosition} onChange={(event) => update("customLogoPosition", event.target.value as LogoPosition)}>{["top-left", "top-center", "top-right", "center", "bottom-left", "bottom-center", "bottom-right"].map((item) => <option key={item}>{item}</option>)}</select></label><div className={v070.range}><span>Scale · {config.customLogoScale}%</span><ResetSlider aria-label="Custom Logo Scale" resetValue={DEFAULT_CONFIG.customLogoScale} min="25" max="200" value={config.customLogoScale} onValueChange={(value) => update("customLogoScale", value)} /></div><div className={v070.range}><span>Opacity · {config.customLogoOpacity}%</span><ResetSlider aria-label="Custom Logo Opacity" resetValue={DEFAULT_CONFIG.customLogoOpacity} min="10" max="100" value={config.customLogoOpacity} onValueChange={(value) => update("customLogoOpacity", value)} /></div></>}</VSection>}
               {isV0703D && v070InspectorTab === "scene" && <>
                 <VSection title="Scene hierarchy" styles={v070}>
+                  <div className="hierarchy-focus-context">
                   <input className={v070.projectInput} value={hierarchyQuery} onChange={(event) => setHierarchyQuery(event.target.value)} placeholder="Search hierarchy…" aria-label="Search scene hierarchy" />
-                  <div className={v070.sceneActions}><button onClick={groupSelectedSlices} disabled={!selectedSliceIds.length || hasGroupSelection}>Group</button><button onClick={ungroupSelectedSlices} disabled={!hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))}>Ungroup</button><button onClick={() => setSimulationFocusSignal((value) => value + 1)} disabled={!selectedSliceIds.length}>Focus</button></div>
-                  <div className={`hierarchy-tree ${v070.hierarchyTree}`}><div className="hierarchy-row screen"><span className="hierarchy-type"><UiIcon name="group" /></span><strong>Scene</strong><small>{allSlices.length}</small></div>{simulationGroups.filter((group) => !group.parentId || !simulationGroups.some((parent) => parent.id === group.parentId)).map((group) => renderHierarchyGroup(group))}{resolumeMap?.screens.map((screen) => { const slices = screen.slices.filter((slice) => !groupedSliceIds.has(slice.id) && (!hierarchyQuery || screen.name.toLowerCase().includes(hierarchyQuery.toLowerCase()) || (simulationLocalNames[slice.id] || slice.name).toLowerCase().includes(hierarchyQuery.toLowerCase()))); if (!slices.length) return null; return <div className="hierarchy-screen" key={screen.name}><div className="hierarchy-row screen"><span className="hierarchy-type"><UiIcon name="screen" /></span><strong title={screen.name}>{screen.name}</strong><small>{slices.length}</small></div>{slices.map((slice) => renderHierarchySlice(slice, 0))}</div>; })}{hierarchyDrag && <div className="hierarchy-root-drop" onDragOver={(event) => { event.preventDefault(); setHierarchyDrop(null); }} onDrop={(event) => { event.preventDefault(); dropHierarchyAtRoot(); }}>Move to scene root</div>}</div>
-                  <small className={v070.note}>Drag slices and subgroups onto a group to set their parent. Double-click a group name to rename it.</small>
-                </VSection>
+                  <div className={v070.sceneActions}><button onClick={groupSelectedSlices} disabled={!modelSelection.length && !selectedSliceIds.length && !hasGroupSelection}>Group</button><button onClick={ungroupSelectedSlices} disabled={!modelSelection.length && !hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))}>Ungroup</button><button onClick={revealHierarchySelection} title="Reveal selection in hierarchy (S)" disabled={!selectedSliceIds.length && !modelSelection.length && !hasGroupSelection}>Focus</button></div>
+                  <div ref={hierarchyTreeRef} tabIndex={0} role="region" aria-label="Scene hierarchy" className={`hierarchy-tree ${v070.hierarchyTree}`}>{simulationGroups.filter((group) => !group.parentId || !simulationGroups.some((parent) => parent.id === group.parentId)).map((group) => renderHierarchyGroup(group))}{resolumeMap?.screens.map(renderScreenContainer)}{hierarchyDrag && <div className="hierarchy-root-drop" onDragOver={(event) => { event.preventDefault(); setHierarchyDrop(null); }} onDrop={(event) => { event.preventDefault(); dropHierarchyAtRoot(); }}>{hierarchyDrag.kind === "slice" ? "Return to original screen" : "Move to scene root"}</div>}{!!importedModels.length && <ModelHierarchy {...modelControls} query={hierarchyQuery} />}</div>
+                                  </div>
+</VSection>
               </>}
               {isV0703D && v070InspectorTab === "scene" && <>
-                <VSection title="Transform axes" styles={v070}><div className={v070.segmented}><button aria-pressed={simulationTransformSpace === "local"} className={simulationTransformSpace === "local" ? v070.active : ""} onClick={() => setSimulationTransformSpace("local")}>Local</button><button aria-pressed={simulationTransformSpace === "world"} className={simulationTransformSpace === "world" ? v070.active : ""} onClick={() => setSimulationTransformSpace("world")}>World</button></div></VSection>
-                <VSection title="Coordinates" styles={v070}>{selectedTransformPosition ? <div className={v070.transformFields}><div className={v070.transformFieldGroup}><small className={v070.note}>Position</small><div className="transform-grid"><SignedNumberField label="X" value={selectedTransformPosition[0]} suffix="m" onCommit={(value) => updateManualPosition(0, value)} /><SignedNumberField label="Y" value={selectedTransformPosition[1]} suffix="m" onCommit={(value) => updateManualPosition(1, value)} /><SignedNumberField label="Z" value={selectedTransformPosition[2]} suffix="m" onCommit={(value) => updateManualPosition(2, value)} /></div></div><div className={v070.transformFieldGroup}><small className={v070.note}>Rotation</small><div className="transform-grid"><SignedNumberField label="X" value={selectedTransformRotation?.[0] ?? null} suffix="°" onCommit={(value) => updateManualRotation(0, value)} /><SignedNumberField label="Y" value={selectedTransformRotation?.[1] ?? null} suffix="°" onCommit={(value) => updateManualRotation(1, value)} /><SignedNumberField label="Z" value={selectedTransformRotation?.[2] ?? null} suffix="°" onCommit={(value) => updateManualRotation(2, value)} /></div></div><div className={v070.transformFieldGroup}><small className={v070.note}>Scale</small><div className="transform-grid"><SignedNumberField label="X" value={selectedTransformScale?.[0] ?? null} suffix="" onCommit={(value) => updateManualScale(0, value)} /><SignedNumberField label="Y" value={selectedTransformScale?.[1] ?? null} suffix="" onCommit={(value) => updateManualScale(1, value)} /><SignedNumberField label="Z" value={selectedTransformScale?.[2] ?? null} suffix="" onCommit={(value) => updateManualScale(2, value)} /></div></div><button className={v070.choose} onClick={resetSelectedTransforms}>Reset transform</button></div> : <small className={v070.note}>Select a slice or group to edit its coordinates.</small>}</VSection>
-                <VSection title="Pivot" styles={v070}>
+                <VSection title="Coordinate System" styles={v070}><div className={v070.segmented}><button aria-pressed={simulationTransformSpace === "local"} className={simulationTransformSpace === "local" ? v070.active : ""} onClick={() => setSimulationTransformSpace("local")}>Local</button><button aria-pressed={simulationTransformSpace === "world"} className={simulationTransformSpace === "world" ? v070.active : ""} onClick={() => setSimulationTransformSpace("world")}>World</button></div></VSection>
+                <VSection title="Coordinates" styles={v070}>{selectedTransformPosition ? <fieldset className={v070.transformFields} disabled={pivotEditingDisabled}><div className={v070.transformFieldGroup}><small className={v070.note}>Position</small><div className="transform-grid" role="group" aria-label="Position coordinates"><SignedNumberField disabled={pivotEditingDisabled} label="X" value={selectedTransformPosition[0]} suffix="m" onCommit={(value) => updateManualPosition(0, value)} /><SignedNumberField disabled={pivotEditingDisabled} label="Y" value={selectedTransformPosition[1]} suffix="m" onCommit={(value) => updateManualPosition(1, value)} /><SignedNumberField disabled={pivotEditingDisabled} label="Z" value={selectedTransformPosition[2]} suffix="m" onCommit={(value) => updateManualPosition(2, value)} /></div></div><div className={v070.transformFieldGroup}><small className={v070.note}>Rotation</small><div className="transform-grid" role="group" aria-label="Rotation coordinates"><SignedNumberField disabled={pivotEditingDisabled} label="X" value={selectedTransformRotation?.[0] ?? null} suffix="°" onCommit={(value) => updateManualRotation(0, value)} /><SignedNumberField disabled={pivotEditingDisabled} label="Y" value={selectedTransformRotation?.[1] ?? null} suffix="°" onCommit={(value) => updateManualRotation(1, value)} /><SignedNumberField disabled={pivotEditingDisabled} label="Z" value={selectedTransformRotation?.[2] ?? null} suffix="°" onCommit={(value) => updateManualRotation(2, value)} /></div></div><div className={v070.transformFieldGroup}><small className={v070.note}>Scale</small><div className="transform-grid" role="group" aria-label="Scale coordinates"><SignedNumberField disabled={pivotEditingDisabled} label="X" value={selectedTransformScale?.[0] ?? null} suffix="" onCommit={(value) => updateManualScale(0, value)} /><SignedNumberField disabled={pivotEditingDisabled} label="Y" value={selectedTransformScale?.[1] ?? null} suffix="" onCommit={(value) => updateManualScale(1, value)} /><SignedNumberField disabled={pivotEditingDisabled} label="Z" value={selectedTransformScale?.[2] ?? null} suffix="" onCommit={(value) => updateManualScale(2, value)} /></div></div><button className={v070.choose} onClick={resetSelectedTransforms}>Reset transform</button>{(!!modelSelection.length || hasGroupSelection) && <button className={v070.choose} onClick={deleteSelectedSceneItems}>{hasGroupSelection ? "Remove selected groups" : "Remove selected items"}</button>}</fieldset> : <small className={v070.note}>Select an item to edit its coordinates.</small>}</VSection>
+              </>}
+              {isV0703D && v070InspectorTab === "scene" && <VSection title="Pivot" styles={v070}>
                   <fieldset className={v070.pivotEditor} disabled={pivotEditingDisabled}>
                     <label className={v070.pivotMode}><span>Mode</span><select aria-label="Pivot mode" value={pivotEditorValues.mode} onChange={(event) => changeSimulationPivot(event.target.value === "custom" ? (previous, width, height) => ({ custom: pivotOffset(previous, width, height) }) : event.target.value as PivotPreset)}>
                       {pivotEditorValues.mode === "mixed" && <option value="mixed" disabled>Mixed</option>}
@@ -5293,13 +5683,14 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                     <PivotPad point={pivotEditorValues.point} disabled={pivotEditingDisabled} onCommit={changeSimulationPivot} />
                     <div className={v070.pivotCoordinates}><span>Pivot (m)</span><div className="transform-grid">{([0, 1, 2] as const).map((axis) => <SignedNumberField key={axis} disabled={pivotEditingDisabled} label={["X", "Y", "Z"][axis]} value={pivotEditorValues.values[axis]} suffix="" onCommit={(value) => changeSimulationPivot((previous, width, height) => { const custom = pivotOffset(previous, width, height); custom[axis] = value; return { custom }; })} />)}</div></div>
                   </fieldset>
-                  {hasGroupSelection && <small className={v070.note}>Select individual screens to edit their pivots. Groups use their group axis.</small>}
-                </VSection>
+                  {(hasGroupSelection || !!modelSelection.length) && <small className={v070.note}>Changing the pivot preserves geometry placement. Offsets are measured from the item’s bounds centre.</small>}
+                </VSection>}
+              {isV0703D && v070InspectorTab === "scene" && !modelSelection.length && <>
                 <VSection id="scene-align" title="Align centres" styles={v070}><div className={`${v070.segmented} ${v070.axisButtons}`}>{([0, 1, 2] as const).map((axis) => <button key={axis} disabled={selectedSliceIds.length < 2} onClick={() => arrangeSimulationSelection(axis, "align")}>Align {["X", "Y", "Z"][axis]}</button>)}</div></VSection>
                 <VSection id="scene-distribute" title="Distribute centres" styles={v070}><div className={`${v070.segmented} ${v070.axisButtons}`}>{([0, 1, 2] as const).map((axis) => <button key={axis} disabled={selectedSliceIds.length < 3} onClick={() => arrangeSimulationSelection(axis, "distribute")}>Space {["X", "Y", "Z"][axis]}</button>)}</div></VSection>
                 <VSection title="Scene display" styles={v070}>{sceneDisplayControls}</VSection>
               </>}
-              {isV0703D && v070InspectorTab === "geometry" && <>
+              {isV0703D && v070InspectorTab === "geometry" && !modelSelection.length && <>
                 <VSection title="Screen geometry" styles={v070}><small className={v070.note}>{selectedSliceIds.length ? `${selectedSliceIds.length} selected screen${selectedSliceIds.length === 1 ? "" : "s"}` : "Scene default"}</small><ExpressionField label="Pixel pitch" value={selectedNumericValues.pixelPitchMm} scopeKey={selectionScopeKey} suffix="mm" onCommit={(value) => selectedSliceIds.length ? updateSelected({ pixelPitchMm: value }) : updateGlobal("pixelPitchMm", value)} /><div className={v070.pitchPresets}>{PIXEL_PITCH_PRESETS.map((pitch) => <button key={pitch} aria-pressed={selectedNumericValues.pixelPitchMm !== null && Math.abs(selectedNumericValues.pixelPitchMm - pitch) < .0001} className={selectedNumericValues.pixelPitchMm !== null && Math.abs(selectedNumericValues.pixelPitchMm - pitch) < .0001 ? v070.active : ""} onClick={() => selectedSliceIds.length ? updateSelected({ pixelPitchMm: pitch }) : updateGlobal("pixelPitchMm", pitch)}>P{pitch}</button>)}</div>{selectedSlices.length === 1 ? <><div className={v070.readout}><span>Dimensions</span><strong>{((selectedSlices[0].input.width * (simulationPitchBySlice[selectedSlices[0].id] || simulationMasterPitchMm)) / 1000).toFixed(3)} × {((selectedSlices[0].input.height * (simulationPitchBySlice[selectedSlices[0].id] || simulationMasterPitchMm)) / 1000).toFixed(3)} m</strong></div><div className={v070.readout}><span>Raster</span><strong>{selectedSlices[0].input.width} × {selectedSlices[0].input.height} px</strong></div>{(selectedCurvatureRadius.horizontal || selectedCurvatureRadius.vertical) && <div className={v070.readout}><span>Calculated diameter</span><strong>{(2 * (selectedCurvatureRadius.horizontal || selectedCurvatureRadius.vertical || 0)).toFixed(3)} m</strong></div>}</> : <div className={v070.readout}><span>Pitch variants</span><strong>{simulationPitchCount}</strong></div>}</VSection>
                 <VSection title="Extrusion" styles={v070}><div className={v070.range}><span>Depth · {round(simulationDepthM * 100, 1)} cm</span><ResetSlider aria-label="Extrusion depth" resetValue={10} min="1" max="50" step=".5" value={simulationDepthM * 100} onEditStart={() => recordSimulationHistory("Change extrusion depth")} onValueChange={(value) => setSimulationDepthM(clamp(value, 1, 50) / 100)} /></div><PreciseNumberInput label="Extrusion depth" min={1} max={50} step={.5} value={round(simulationDepthM * 100, 1)} onEditStart={() => recordSimulationHistory("Enter extrusion depth")} onChange={(value) => setSimulationDepthM(value / 100)} /></VSection>
                 <VSection title="Curvature" styles={v070}><div className={v070.range}><span>Horizontal · {selectedCurvature.horizontal ?? "Mixed"}°</span><ResetSlider aria-label="Horizontal curve" resetValue={0} min="-360" max="360" value={selectedCurvature.horizontal ?? 0} disabled={verticalCurveActive} onEditStart={() => recordSimulationHistory("Change horizontal curve")} onPointerDown={() => {  setSimulationGeometryPreview(true); }} onPointerUp={() => setSimulationGeometryPreview(false)} onValueChange={(value) => applySimulationCurvature("horizontal", value)} /></div><CurvatureNumberInput label="Horizontal curve" value={selectedCurvature.horizontal} disabled={verticalCurveActive} onEditStart={() => recordSimulationHistory("Enter horizontal curve")} onCommit={(value) => applySimulationCurvature("horizontal", value)} /><div className={v070.range}><span>Vertical · {selectedCurvature.vertical ?? "Mixed"}°</span><ResetSlider aria-label="Vertical curve" resetValue={0} min="-360" max="360" value={selectedCurvature.vertical ?? 0} disabled={horizontalCurveActive} onEditStart={() => recordSimulationHistory("Change vertical curve")} onPointerDown={() => {  setSimulationGeometryPreview(true); }} onPointerUp={() => setSimulationGeometryPreview(false)} onValueChange={(value) => applySimulationCurvature("vertical", value)} /></div><CurvatureNumberInput label="Vertical curve" value={selectedCurvature.vertical} disabled={horizontalCurveActive} onEditStart={() => recordSimulationHistory("Enter vertical curve")} onCommit={(value) => applySimulationCurvature("vertical", value)} />{invalidCurvedDepthSlices.length > 0 && <p className={v070.warning}>Reduce extrusion below the inner curvature radius for {invalidCurvedDepthSlices.length} screen{invalidCurvedDepthSlices.length === 1 ? "" : "s"}.</p>}</VSection>
@@ -5309,7 +5700,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                 <VSection title="Video texture" styles={v070}><label className={v070.select}><span>Global feed</span><select value={simulationSource} onChange={(event) => { const next = event.target.value as SimulationSource; recordSimulationHistory("Change global source"); stopSimulationInput(); void disconnectNativeInput(); setSimulationSource(next); setSimulationSourceStatus(next === "pattern" ? "Native · full quality" : "Select or connect the source below"); }}><option value="pattern">Pattern Generator</option><option value="video">Video Devices</option><option value="ndi">NDI</option><option value="spout">Spout</option></select></label><label className={v070.select}><span>Selected</span><select disabled={!selectedSliceIds.length} value={selectedSourceOverride} onChange={(event) => { const value = event.target.value as "inherit" | SimulationSource; recordSimulationHistory("Change selected source routing"); setSimulationSourceOverrides((current) => { const next = { ...current }; selectedSliceIds.forEach((id) => value === "inherit" ? delete next[id] : next[id] = value); return next; }); }}>{selectedSourceOverride === "mixed" && <option value="mixed" disabled>— Multiple sources</option>}<option value="inherit">Inherit global source</option><option value="pattern">Pattern Generator</option><option value="video">Video Device · Full Source</option><option value="ndi">NDI · Full Source</option><option value="spout">Spout · Full Source</option></select></label>{selectedSliceIds.length > 0 && selectedSourceOverride !== "inherit" && <button className={v070.choose} onClick={() => { recordSimulationHistory("Reset selected source routing"); setSimulationSourceOverrides((current) => { const next = { ...current }; selectedSliceIds.forEach((id) => delete next[id]); return next; }); }}>Reset selected routing</button>}</VSection>
                 {sourcePanelType !== "pattern" && <VSection title={sourcePanelType === "video" ? "Video device" : sourcePanelType === "ndi" ? "NDI input" : "Spout input"} styles={v070}><div className={v070.segmented}><button aria-pressed={simulationQuality === "latency"} className={simulationQuality === "latency" ? v070.active : ""} onClick={() => setSimulationQuality("latency")}>Low latency</button><button aria-pressed={simulationQuality === "quality"} className={simulationQuality === "quality" ? v070.active : ""} onClick={() => setSimulationQuality("quality")}>High quality</button></div>{sourcePanelType === "video" ? <><label className={v070.select}><span>Device</span><select value={simulationInputDeviceId} onChange={(event) => setSimulationInputDeviceId(event.target.value)}><option value="">Auto-detect</option>{simulationInputDevices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Video input ${index + 1}`}</option>)}</select></label><button className={v070.choose} onClick={() => void connectSimulationInput()}>{simulationSourceVideo ? "Reconnect device" : "Connect device"}</button>{simulationSourceVideo && <button className={v070.choose} onClick={stopSimulationInput}>Disconnect</button>}</> : <><label className={v070.select}><span>Available</span><select value={sourcePanelType === "ndi" ? simulationNdiSourceId : simulationSpoutSourceId} disabled={!simulationNativeSources.length} onChange={(event) => sourcePanelType === "ndi" ? setSimulationNdiSourceId(event.target.value) : setSimulationSpoutSourceId(event.target.value)}>{!simulationNativeSources.length && <option value="">No sources found</option>}{simulationNativeSources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><button className={v070.choose} disabled={!simulationNativeSources.length} onClick={() => void connectNativeInput()}>Connect source</button><button className={v070.choose} onClick={() => void scanNativeSources(sourcePanelType)}>Refresh list</button>{simulationNativeConnected && <button className={v070.choose} onClick={() => void disconnectNativeInput()}>Disconnect</button>}</>}<div className={v070.fileStatus}><i /><span>{simulationSourceStatus}</span></div></VSection>}
               </>}
-              {isV070Map && v070InspectorTab === "source" && <><VSection title="Map summary" styles={v070}><div className={v070.readout}><span>Canvas</span><strong>{outputWidth} × {outputHeight} px</strong></div><div className={v070.readout}><span>Contents</span><strong>{resolumeMap ? `${activeSlices.length} slices · ${mapView === "output" ? 1 : resolumeMap.screens.length} ${mapView === "output" ? "screen" : "screens"}` : "No XML loaded"}</strong></div></VSection>{resolumeMap && <><VSection title="Slice selection" styles={v070}><label className={v070.select}><span>Slice</span><select value={selectedSliceIds.length === 1 ? selectedSliceIds[0] : selectedSliceIds.length > 1 ? "multiple" : "none"} onChange={(event) => setSelectedSliceIds(event.target.value === "none" ? [] : [event.target.value])}><option value="none">Click map or choose…</option>{selectedSliceIds.length > 1 && <option value="multiple">{selectedSliceIds.length} slices selected</option>}{activeSlices.map((slice) => <option key={slice.id} value={slice.id}>{slice.name}</option>)}</select></label>{selectedSlices.length > 0 && <button className={v070.choose} onClick={() => setSelectedSliceIds([])}>Clear selection</button>}</VSection><VSection title="Screens and slices" styles={v070}><div className={v070.mapTree}>{resolumeMap.screens.map((screen, screenIndex) => <section key={screen.name}><button title={screen.name} aria-pressed={mapView === "output" && selectedScreen === screenIndex} className={mapView === "output" && selectedScreen === screenIndex ? v070.active : ""} onClick={() => { setMapView("output"); setSelectedScreen(screenIndex); setSelectedSliceIds(screen.slices.map((slice) => slice.id)); }}><strong title={screen.name}>{screen.name}</strong><span>{screen.width} × {screen.height}</span></button>{screen.slices.map((slice) => <button key={slice.id} title={slice.name} aria-pressed={selectedSliceIds.includes(slice.id)} className={selectedSliceIds.includes(slice.id) ? v070.active : ""} onClick={(event) => setSelectedSliceIds((current) => event.ctrlKey ? current.includes(slice.id) ? current.filter((id) => id !== slice.id) : [...current, slice.id] : [slice.id])}><span>{slice.name}</span><small>{slice.input.width} × {slice.input.height} px</small></button>)}</section>)}</div></VSection></>}</>}
+              {isV070Map && v070InspectorTab === "source" && <><VSection title="Map summary" styles={v070}><div className={v070.readout}><span>Canvas</span><strong>{outputWidth} × {outputHeight} px</strong></div><div className={v070.readout}><span>Contents</span><strong>{resolumeMap ? `${activeSlices.length} slices · ${mapView === "output" ? 1 : resolumeMap.screens.length} ${mapView === "output" ? "screen" : "screens"}` : "No XML loaded"}</strong></div></VSection>{resolumeMap && <><VSection title="Slice selection" styles={v070}><label className={v070.select}><span>Slice</span><select value={selectedSliceIds.length === 1 ? selectedSliceIds[0] : selectedSliceIds.length > 1 ? "multiple" : "none"} onChange={(event) => setSelectedSliceIds(event.target.value === "none" ? [] : [event.target.value])}><option value="none">Click map or choose…</option>{selectedSliceIds.length > 1 && <option value="multiple">{selectedSliceIds.length} slices selected</option>}{activeSlices.map((slice) => <option key={slice.id} value={slice.id}>{slice.name}</option>)}</select></label>{selectedSlices.length > 0 && <button className={v070.choose} onClick={() => setSelectedSliceIds([])}>Clear selection</button>}</VSection><VSection title="Screens and slices" styles={v070}><div className={v070.mapTree}>{resolumeMap.screens.map((screen, screenIndex) => <section key={screen.name}><button title={screen.name} aria-pressed={mapView === "output" && activeScreenIndex === screenIndex} className={mapView === "output" && activeScreenIndex === screenIndex ? v070.active : ""} onClick={() => { setMapView("output"); setSelectedScreen(screenIndex); setSelectedSliceIds(screen.slices.map((slice) => slice.id)); }}><strong title={screen.name}>{screen.name}</strong><span>{screen.width} × {screen.height}</span></button>{screen.slices.map((slice) => <button key={slice.id} title={slice.name} aria-pressed={selectedSliceIds.includes(slice.id)} className={selectedSliceIds.includes(slice.id) ? v070.active : ""} onClick={(event) => setSelectedSliceIds((current) => event.ctrlKey ? current.includes(slice.id) ? current.filter((id) => id !== slice.id) : [...current, slice.id] : [slice.id])}><span>{slice.name}</span><small>{slice.input.width} × {slice.input.height} px</small></button>)}</section>)}</div></VSection></>}</>}
               {isV070Map && v070InspectorTab === "geometry" && <VSection title="LED panel geometry" styles={v070}><small className={v070.note}>{selectedSliceIds.length ? `${selectedSliceIds.length} selected` : "Project default"}</small><div className={v070.two}><ExpressionField label="Panel W" value={selectedNumericValues.cabinetWidth} scopeKey={selectionScopeKey} suffix="mm" integer onCommit={(value) => selectedSliceIds.length ? updateSelected({ cabinetWidth: value }) : updateGlobal("cabinetWidth", value)} /><ExpressionField label="Panel H" value={selectedNumericValues.cabinetHeight} scopeKey={selectionScopeKey} suffix="mm" integer onCommit={(value) => selectedSliceIds.length ? updateSelected({ cabinetHeight: value }) : updateGlobal("cabinetHeight", value)} /></div><ExpressionField label="Pixel pitch" value={selectedNumericValues.pixelPitchMm} scopeKey={selectionScopeKey} suffix="mm" onCommit={(value) => selectedSliceIds.length ? updateSelected({ pixelPitchMm: value }) : updateGlobal("pixelPitchMm", value)} /><div className={v070.pitchPresets}>{PIXEL_PITCH_PRESETS.map((pitch) => <button key={pitch} aria-pressed={selectedNumericValues.pixelPitchMm !== null && Math.abs(selectedNumericValues.pixelPitchMm - pitch) < .0001} className={selectedNumericValues.pixelPitchMm !== null && Math.abs(selectedNumericValues.pixelPitchMm - pitch) < .0001 ? v070.active : ""} onClick={() => selectedSliceIds.length ? updateSelected({ pixelPitchMm: pitch }) : updateGlobal("pixelPitchMm", pitch)}>P{pitch}</button>)}</div><div className={v070.readout}><span>Checker block</span><strong>{selectedPanelPixels ? `${selectedPanelPixels.width} × ${selectedPanelPixels.height} px` : "— Multiple values"}</strong></div>{selectedSlices.length === 1 && <><div className={v070.readout}><span>Input position</span><strong>X {selectedSlices[0].input.x} · Y {selectedSlices[0].input.y} px</strong></div><div className={v070.readout}><span>Output position</span><strong>X {selectedSlices[0].output.x} · Y {selectedSlices[0].output.y} px</strong></div><div className={v070.readout}><span>Data size</span><strong>{selectedSlices[0].input.width} × {selectedSlices[0].input.height} px</strong></div><div className={v070.readout}><span>Physical size</span><strong>{((selectedSlices[0].input.width * (selectedNumericValues.pixelPitchMm || config.pixelPitchMm)) / 1000).toFixed(3)} × {((selectedSlices[0].input.height * (selectedNumericValues.pixelPitchMm || config.pixelPitchMm)) / 1000).toFixed(3)} m</strong></div><small className={v070.note}>Pixel position and data size come from the linked Resolume XML and remain read-only.</small></>}</VSection>}
               {isV070Map && v070InspectorTab === "information" && <VSection title="Slice information" styles={v070}><ToggleRow label="Show information" value={selectedBoolean("showLabels", config.showLabels)} onClick={() => selectedSliceIds.length ? updateSelected({ showLabels: !selectedBoolean("showLabels", config.showLabels) }) : updateGlobal("showLabels", !config.showLabels)} styles={v070} /><label className={v070.select}><span>Orientation</span><select value={selectedInfoOrientation} onChange={(event) => selectedSliceIds.length ? updateSelected({ infoOrientation: event.target.value as InfoOrientation }) : updateGlobal("infoOrientation", event.target.value as InfoOrientation)}>{selectedInfoOrientation === "mixed" && <option value="mixed" disabled>— Multiple values</option>}<option value="normal">Normal</option><option value="rotate-90">Rotate 90°</option><option value="rotate-180">Rotate 180°</option><option value="rotate-270">Rotate 270°</option></select></label><div className={v070.two}><ExpressionField label="Name size" value={selectedNumericValues.labelNameScale} scopeKey={selectionScopeKey} suffix="%" integer min={50} max={250} onCommit={(value) => selectedSliceIds.length ? updateSelected({ labelNameScale: value }) : updateGlobal("labelNameScale", value)} /><ExpressionField label="Data size" value={selectedNumericValues.labelDataScale} scopeKey={selectionScopeKey} suffix="%" integer min={50} max={250} onCommit={(value) => selectedSliceIds.length ? updateSelected({ labelDataScale: value }) : updateGlobal("labelDataScale", value)} /></div>{infoFields.map((field) => <label className={v070.select} key={field.key}><span>{field.label}</span><select value={selectedInfoPosition(field.key)} onChange={(event) => selectedSliceIds.length ? updateSelected({ [field.key]: event.target.value as InfoPosition }) : updateGlobal(field.key, event.target.value as InfoPosition)}>{selectedInfoPosition(field.key) === "mixed" && <option value="mixed" disabled>— Multiple values</option>}{INFO_POSITIONS.map((position) => <option key={position.id} value={position.id}>{position.label}</option>)}</select></label>)}<button className={v070.choose} onClick={selectedSliceIds.length ? () => setSliceOverrides((current) => { const next = { ...current }; selectedSliceIds.forEach((id) => delete next[id]); return next; }) : applyGlobalToAll}>{selectedSliceIds.length ? "Reset selected to global" : "Apply global to all slices"}</button></VSection>}
               {isV070Map && v070InspectorTab === "appearance" && <>
@@ -5334,7 +5725,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             </div>
           </aside>
         </section>
-        <ManualDialog topic={helpTopic} onClose={() => setHelpTopic(null)} />
+        {replacementDialog}
+        <ManualDialog version={DISPLAY_VERSION} topic={helpTopic} onClose={() => setHelpTopic(null)} />
         <input ref={projectInputRef} hidden type="file" accept=".lo2s,application/x-opticmesh-project,.json,application/json"
           onChange={(event) => { loadProject(event.target.files?.[0]); event.currentTarget.value = ""; }} />
       </main>
@@ -5348,7 +5740,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           <div className="brand-lockup">
             <img src="brand/opticmesh-icon.png" alt="LO2S - OpticMesh" className="product-icon" />
             <span className="brand-product">
-              LO2S - OpticMesh V.{DISPLAY_VERSION} <b>Beta</b>
+              LO2S - OpticMesh V.{DISPLAY_VERSION} <b title={BUILD_DESCRIPTION}>{BUILD_BADGE}</b>
             </span>
           </div>
           <nav className="workspace-tabs" aria-label="Workspace mode">
@@ -5550,7 +5942,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                       )}
                     </div>
                     <div className="control-group">
-                      <div className="control-group-title">Transform axes</div>
+                      <div className="control-group-title">Coordinate System</div>
                       <div className="segmented">
                         <button
                           className={simulationTransformSpace === "local" ? "active" : ""}
@@ -5932,7 +6324,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                       <label className="select-field">
                         <span>Screen</span>
                         <select
-                          value={mapView === "input" ? "combined" : selectedScreen}
+                          value={mapView === "input" ? "combined" : activeScreenIndex}
                           disabled={mapView === "input"}
                           onChange={(event) => {
                             setSelectedScreen(Number(event.target.value));
@@ -5940,7 +6332,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                             resetView();
                           }}
                         >
-                          <option value="combined">Combined Input</option>
+                          {mapView === "input" && <option value="combined">Input composition</option>}
                           {mapView === "output" &&
                             resolumeMap.screens.map((screen, index) => (
                               <option key={screen.name} value={index}>
@@ -6472,8 +6864,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
               </div>
             </div>
             <div className="preview-shell" ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>
-              {workspaceMode === "simulation" ? (
-                <>
+              <RetainedWorkspace key={simulationCameraSession} active={workspaceMode === "simulation"}>
                   <div className="preview-toolbar">
                     <span>
                       <i className="green" /> 3D scene · metres · configurable bottom pivots
@@ -6491,7 +6882,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                       <button onClick={() => setSimulationFitSignal((value) => value + 1)}>Fit scene</button>
                     </div>
                   </div>
-                  <ThreeSimulation
+                  <ThreeSimulation key={simulationCameraSession} cameraMemory={simulationCameraMemory} renderPaused={workspaceMode !== "simulation"} outputActive={workspaceMode === "simulation" && patternOutput !== "off"}
+                    bodyAppearanceBySlice={simulationBodyBySlice}
                     slices={allSlices}
                     compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth}
                     compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight}
@@ -6503,7 +6895,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                     selectedIds={selectedSliceIds}
                     visibleIds={simulationVisibleIds}
                     lockedIds={simulationLockedIds}
-                    transforms={renderedSimulationTransforms}
+                    transforms={groupModelPreview ? {...renderedSimulationTransforms,...simulationTransformPreview} : renderedSimulationTransforms}
                     selectionTransform={selectedGroupSelectionWorldTransform}
                     transformMode={simulationTool}
                     transformSpace={simulationTransformSpace}
@@ -6518,7 +6910,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                     viewMode={simulationViewMode}
                     snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible}
                     floorVisible={simulationFloorVisible}
-                    backgroundLevel={simulationBackgroundLevel}
+                    backgroundLevel={simulationBackgroundLevel} reflectionPreset={simulationReflectionPreset}
                     interactiveGeometryPreview={simulationGeometryPreview}
                     drawPatternTexture={drawSimulationTexture}
                     onSelectionChange={(ids) => {
@@ -6528,11 +6920,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                     }}
                     onTransformPreview={setSimulationTransformPreview}
                     onTransformsChange={commitSimulationTransforms}
-                    onCameraChange={setSimulationCamera}
+                    onCameraChange={publishSimulationCamera}
                     onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }}
                   />
-                </>
-              ) : (
+              </RetainedWorkspace>
+              {workspaceMode !== "simulation" && (
                 <>
                   <div className="preview-toolbar">
                     <span>
@@ -6556,7 +6948,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                   </div>
                   <div
                     ref={canvasStageRef}
-                    className={`canvas-stage ${spaceDown ? "panning" : ""} ${selectionMarquee ? "selecting" : ""}`}
+                    className={`canvas-stage ${spaceDown ? "panning" : ""} ${selectionMarquee ? "selecting" : ""} ${emptyPixelMap ? "map-empty-stage" : ""}`}
                     onPointerDown={beginInteraction}
                     onPointerMove={moveInteraction}
                     onPointerUp={endInteraction}
@@ -6566,9 +6958,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                       adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY);
                     }}
                   >
+                    {emptyPixelMap && <div className="map-empty" role="status"><strong>Import a Resolume XML map</strong><span>Your input and output maps will appear here.</span></div>}
                     <canvas
                       ref={canvasRef}
+                      aria-hidden={emptyPixelMap || undefined}
                       style={{
+                        visibility: emptyPixelMap ? "hidden" : undefined,
                         width: `${outputWidth * baseScale}px`,
                         height: `${outputHeight * baseScale}px`,
                         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -6670,7 +7065,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                   </p>
                 </div>
               </section>
-              <section className="inspector-section scene-hierarchy">
+              <section className="inspector-section scene-hierarchy hierarchy-focus-context">
                 <div className="section-title">
                   <span>Scene hierarchy</span>
                   <small>
@@ -6679,32 +7074,19 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                 </div>
                 <input className="hierarchy-search" value={hierarchyQuery} onChange={(event) => setHierarchyQuery(event.target.value)} placeholder="Search screens and slices" aria-label="Search scene hierarchy" />
                 <div className="hierarchy-actions">
-                  <button disabled={!selectedSliceIds.length || hasGroupSelection} onClick={groupSelectedSlices}>
+                  <button disabled={!modelSelection.length && !selectedSliceIds.length && !hasGroupSelection} onClick={groupSelectedSlices}>
                     Group
                   </button>
-                  <button disabled={!hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))} onClick={ungroupSelectedSlices}>
+                  <button disabled={!modelSelection.length && !hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))} onClick={ungroupSelectedSlices}>
                     Ungroup
                   </button>
-                  <button disabled={!selectedSliceIds.length} onClick={() => setSimulationFocusSignal((value) => value + 1)}>
+                  <button disabled={!selectedSliceIds.length && !modelSelection.length && !hasGroupSelection} onClick={revealHierarchySelection} title="Reveal selection in hierarchy (S)">
                     Focus
                   </button>
                 </div>
-                <div className="hierarchy-tree">
+                <div ref={hierarchyTreeRef} tabIndex={0} role="region" aria-label="Scene hierarchy" className="hierarchy-tree">
                   {simulationGroups.filter((group) => !group.parentId || !simulationGroups.some((parent) => parent.id === group.parentId)).map((group) => renderHierarchyGroup(group))}
-                  {resolumeMap?.screens.map((screen) => {
-                    const slices = screen.slices.filter((slice) => !groupedSliceIds.has(slice.id) && (!hierarchyQuery || screen.name.toLowerCase().includes(hierarchyQuery.toLowerCase()) || (simulationLocalNames[slice.id] || slice.name).toLowerCase().includes(hierarchyQuery.toLowerCase())));
-                    if (!slices.length) return null;
-                    return (
-                      <div className="hierarchy-screen" key={screen.name}>
-                        <div className="hierarchy-row screen">
-                          <span className="hierarchy-type"><UiIcon name="screen" /></span>
-                          <strong title={screen.name}>{screen.name}</strong>
-                          <small>{slices.length}</small>
-                        </div>
-                        {slices.map((slice) => renderHierarchySlice(slice, 0))}
-                      </div>
-                    );
-                  })}
+                  {resolumeMap?.screens.map(renderScreenContainer)}
                   {hierarchyDrag && (
                     <div
                       className="hierarchy-root-drop"
@@ -6717,7 +7099,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                         dropHierarchyAtRoot();
                       }}
                     >
-                      Move to scene root
+                      {hierarchyDrag.kind === "slice" ? "Return to original screen" : "Move to scene root"}
                     </div>
                   )}
                 </div>
@@ -6809,10 +7191,10 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                     <option value="glb">GLB · Universal</option>
                     <option value="gltf">glTF Package · ZIP</option>
                     <option value="obj">OBJ Package · ZIP</option>
-                    <option value="mvr">MVR 1.5 · Scene meshes</option>
+                    <option value="mvr">MVR 1.5 · Scene meshes</option><option value="stl">STL · Geometry only</option><option value="usdz">USDZ · Packaged scene</option>
                   </select>
                 </label>
-                <button className="button primary wide export-3d-button" disabled={!allSlices.length || simulationExporting} onClick={() => void export3DScene()}>
+                <button className="button primary wide export-3d-button" disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene()}>
                   {simulationExporting ? "Building export…" : "Export 3D scene"}
                 </button>
                 <p className="micro-note">Exports the complete curved mesh, physical scale, UV map, screen names and saved transforms. Floor, grid, camera and gizmos are excluded.</p>
@@ -6841,6 +7223,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                 <button className="inspector-button" onClick={() => void revealProjectsFolder()}>
                   Reveal Projects folder
                 </button>
+                {replacementDialog}
                 <input
                   ref={projectInputRef}
                   hidden
@@ -6987,6 +7370,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                 <button className="inspector-button" onClick={() => void revealProjectsFolder()}>
                   Reveal Projects folder
                 </button>
+                {replacementDialog}
                 <input
                   ref={projectInputRef}
                   hidden

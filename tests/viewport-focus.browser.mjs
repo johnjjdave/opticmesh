@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -8,7 +9,7 @@ try {
   await page.goto(process.env.OPTICMESH_URL || 'http://localhost:3000/v070');
   await page.getByText('Manual save only', { exact: true }).waitFor();
   const button = name => page.getByRole('button', { name, exact: true });
-  await button('3D').click(); await button('Load Demo Scene').click();
+  await button('3D').click(); await button('Load Demo Scene').click();await confirmProjectReplacement(page);
   const view = page.getByRole('region', { name: '3D viewport', exact: true });
   const ring = () => view.evaluate(el => getComputedStyle(el).outlineStyle);
   const focus = () => view.evaluate(el => el === document.activeElement);

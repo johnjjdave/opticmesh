@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SliceTransform } from "./three-simulation";
+import { PIVOT_PRESETS, reanchorTransform, type PivotPreset } from "./slice-pivot.ts";
 
 export type TransformGroup = {
   id: string;
@@ -12,6 +13,7 @@ export type TransformGroup = {
   transform: SliceTransform;
   initialTransform: SliceTransform;
   legacySelectionGroup?: boolean;
+  pivotMode?: PivotPreset | "custom";
 };
 
 export const IDENTITY_TRANSFORM: SliceTransform = {
@@ -164,5 +166,41 @@ export function migrateTransformGroup(value: Partial<TransformGroup> & Pick<Tran
     transform: normalizeTransform(value.transform),
     initialTransform: normalizeTransform(value.initialTransform || value.transform),
     legacySelectionGroup: value.transform ? false : true,
+    pivotMode: value.pivotMode === "custom" || PIVOT_PRESETS.includes(value.pivotMode as PivotPreset) ? value.pivotMode : undefined,
   };
+}
+
+/** Reanchor a group without moving its direct slices or nested groups in world space. */
+export function reanchorGroup(groups: TransformGroup[], transforms: Record<string, SliceTransform>, id: string, point: [number,number,number], mode: PivotPreset | "custom") {
+  const target=groups.find(g=>g.id===id); if(!target)return {groups,transforms};
+  const compensate=(t: SliceTransform): SliceTransform=>({...t,position:t.position.map((v,i)=>v-point[i]) as [number,number,number]});
+  const reanchor=(transform: SliceTransform): SliceTransform=>{
+    if(!target.parentId)return reanchorTransform(transform,[0,0,0],point);
+    // Use the same composed TRS frame as the renderer, including non-uniform parents.
+    const parent=groupWorldTransform(target.parentId,groups),world=localToWorldTransform(parent,transform);
+    const position=new THREE.Vector3(...point).applyMatrix4(transformMatrix(world)).applyMatrix4(transformMatrix(parent).invert());
+    return {...transform,position:position.toArray() as [number,number,number]};
+  };
+  const nextTransforms={...transforms};
+  for(const slice of target.sliceIds) if(nextTransforms[slice])nextTransforms[slice]=compensate(nextTransforms[slice]);
+  return {transforms:nextTransforms,groups:groups.map(g=>g.id===id ? {...g,pivotMode:mode,transform:reanchor(g.transform),initialTransform:reanchor(g.initialTransform)} : g.parentId===id ? {...g,transform:compensate(g.transform),initialTransform:compensate(g.initialTransform)} : g)};
+}
+
+/** Dissolve scene containers without ever removing source-owned Resolume slices. */
+export function releaseSceneGroups(groups: TransformGroup[], ids: string[], transforms: Record<string,SliceTransform>, worldSlices: Record<string,SliceTransform>, removeBranch=false) {
+  const removed=new Set(ids.filter(id=>groups.some(g=>g.id===id)));
+  if(removeBranch){let changed=true;while(changed){changed=false;for(const group of groups)if(group.parentId&&removed.has(group.parentId)&&!removed.has(group.id)){removed.add(group.id);changed=true;}}}
+  if(groups.some(g=>removed.has(g.id)&&(g.locked||groupAncestorIds(g.id,groups).some(id=>groups.find(p=>p.id===id)?.locked))))throw new Error("Unlock the selected groups before removing or ungrouping them.");
+  const returnedSliceIds=[...new Set(groups.filter(g=>removed.has(g.id)).flatMap(g=>g.sliceIds))];
+  const nextTransforms={...transforms};for(const id of returnedSliceIds){if(!worldSlices[id])throw new Error("A slice transform could not be preserved.");nextTransforms[id]=normalizeTransform(worldSlices[id]);}
+  const byId=new Map(groups.map(g=>[g.id,g]));
+  const nextGroups=groups.filter(g=>!removed.has(g.id)).map(group=>{
+    let parentId=group.parentId;while(parentId&&removed.has(parentId))parentId=byId.get(parentId)?.parentId||null;
+    if(parentId===group.parentId)return group;
+    const world=groupWorldTransform(group.id,groups),parentWorld=parentId?groupWorldTransform(parentId,groups):null;
+    const oldParent=group.parentId?groupWorldTransform(group.parentId,groups):null;
+    const initialWorld=oldParent?localToWorldTransform(oldParent,group.initialTransform):group.initialTransform;
+    return {...group,parentId,transform:parentWorld?worldToLocalTransform(parentWorld,world):world,initialTransform:parentWorld?worldToLocalTransform(parentWorld,initialWorld):normalizeTransform(initialWorld)};
+  });
+  return {groups:nextGroups,transforms:nextTransforms,removedIds:[...removed],returnedSliceIds};
 }

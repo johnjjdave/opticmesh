@@ -40,6 +40,7 @@ const eslintConfig = defineConfig([
     "outputs/**",
     "design/**",
     "app/prototype/**",
+    "app/vendor/**", // Third-party loader; covered by importer regressions, original style retained.
   ]),
 ]);
 

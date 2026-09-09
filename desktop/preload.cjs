@@ -87,6 +87,8 @@ function startSharedFrames(status) {
 }
 
 contextBridge.exposeInMainWorld("lo2sDesktop", {
+  getSystemPerformance: () => ipcRenderer.invoke("performance:snapshot"),
+  windowedOutputGesture: (command) => ipcRenderer.invoke("windowed-output:gesture", command),
   chooseResolumeXml: () => ipcRenderer.invoke("resolume:choose-xml"),
   linkLatestResolumeMap: () => ipcRenderer.invoke("resolume:link-latest"),
   unlinkResolumeMap: () => ipcRenderer.invoke("resolume:unlink"),
@@ -96,6 +98,7 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
   compileProject: (payload) => ipcRenderer.invoke("project:compile", payload),
   overwriteProject: (projectPath, data) => ipcRenderer.invoke("project:overwrite", { path: projectPath, data }),
   openProject: () => ipcRenderer.invoke("project:open"),
+  autosaveProjectDelta: (patch) => ipcRenderer.invoke("project:autosave-delta", patch),
   autosaveProject: (data) => ipcRenderer.invoke("project:autosave", { data }),
   autosaveProjectSync: (data) => ipcRenderer.sendSync("project:autosave-sync", { data }),
   loadStartupProject: () => ipcRenderer.invoke("project:load-startup"),

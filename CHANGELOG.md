@@ -1,19 +1,59 @@
 # Changelog
 
-Features, improvements, fixes, and compatibility notes for LO2S - OpticMesh. Version 0.7.0 is a Beta release.
+Features, improvements, fixes and compatibility notes for LO2S - OpticMesh.
 
-## Unreleased
+## [0.8.0 Beta] - 2026-09-09
 
-### Fixes
+Version 0.8.0 is a beta preview. Version 0.7.0 remains the stable Windows release and hosted web app.
 
-- Fixed the LO2S toolbar logo in the Windows application by bundling the artwork with the interface.
-- Set 3D NDI/Spout output to a fixed 1920 × 1080 targeting 30 fps, independent of the composition raster. Capture time counts toward frame pacing. The output camera uses a 16:9 frame, and the Output panel shows the stream dimensions.
-- Replaced blocking 3D output readback with asynchronous GPU capture, preserved viewport state during capture, and prevented overlapping captures and stale frames after workspace/protocol changes. The viewport refresh rate remains independent; pattern/map exports retain native resolution.
-- Fixed dark stripes on distant screens in 3D NDI/Spout output with higher-precision depth capture, and added antialiasing to outgoing frames. Output remains 1920 × 1080 targeting 30 fps.
+### Imported stages and scene editing
 
-### Distribution
+- Import static stage geometry from MVR 1.4/1.5/1.6, GDTF 1.1/1.2, FBX, OBJ, glTF/GLB, 3DS, Collada/DAE and STL. USD-family import is experimental.
+- Inspect the model and its dimensions before importing. Choose source units where required and import either a whole model or its available hierarchy. MVR uses its defined scale automatically and excludes lighting metadata that has no stage geometry.
+- Use one consistent hierarchy for imported models, LED slices and editable groups. Rename, reorder and reparent items; create mixed groups; and control visibility and locks with matching controls.
+- Edit imported models through the same Coordinates and Pivot tools as LED slices, including arithmetic, wheel adjustment, Shift steps, live transform values and reset. Pivot edits preserve object placement.
+- Use Transfer to match a selected object's position and orientation to a reference object while accounting for different pivots.
+- Imported models support viewport selection, box selection, hierarchy range selection, ancestor highlights and a restrained outer selection outline. Hierarchy Focus reveals the selected item; viewport Focus frames it.
+- Delete removes editable model content while protecting Resolume slices. Removing mixed groups returns their slices to their original screen containers without changing placement or source links.
+- GLB, glTF, OBJ and MVR exports include imported geometry. Added STL and USDZ export paths; format-specific hierarchy, material and unit limits are documented in the manual.
 
-- Moved web deployment packages out of public release downloads into separate versioned storage. Windows releases retain the installer and its checksum; the hosted application remains available at opticmesh.lo2s.com.
+### Materials and reflections
+
+- Added the 3D Material tab with diffuse colour/intensity, metallic, roughness and specular controls, inheritance, multi-selection, slider reset and Undo/Redo.
+- Apply materials to imported models and LED extrusions while keeping LED display surfaces on their assigned source content.
+- Choose shaded or wireframe display. Diffuse colour controls wireframe line colour; reflective controls are disabled while wireframe is selected.
+- Added three selectable HDRI reflection environments in Scene Display. Both control rows remain synchronized, and the chosen look is saved with the project. Reflections do not replace the background or LED content.
+- Improved colour-picker responsiveness and corrected material inheritance in mixed groups.
+
+### Windowed preview and performance
+
+- Added an independent, camera-only Windowed output. The Windows preview stays above other applications and continues updating across workspace changes.
+- Move the window with its borderless top-left handle, resize from the bottom-right corner and close with the top-right button or Escape. Left-drag inside orbits, right-drag pans and the wheel zooms.
+- Pause the main viewport while Windowed output remains live. Closing the preview resumes the main viewport automatically; native output remains independently controlled.
+- Reduced repeated model loading and memory duplication when opening Windowed output. Returning from Patterns or Pixel Map retains the loaded 3D scene and camera.
+- Improved navigation and autosave responsiveness with large imported scenes, including close-up cursor zoom. Model detail is preserved without polygon reduction.
+- Expanded Performance with UI FPS, viewport redraws, scene/drawn triangle counts, CPU and memory readings, and supported NVIDIA GPU/VRAM telemetry. Load colours distinguish normal, elevated and high readings.
+- Fixed floor/grid visibility at close zoom levels and steep camera angles.
+
+### Projects, maps and interface
+
+- New Project and Load Demo ask whether to save before replacing the current work and clearing Undo history.
+- Projects containing imported geometry embed it in the project file. The combined embedded-model allowance is 150 MiB; earlier supported project formats remain readable.
+- Project restore opens the Scene inspector and starts LED slices on Pattern Generator for deliberate live-source reconnection. Disconnected feeds display black instead of white.
+- Pixel Map opens with a checkerboard canvas and an import prompt when no map is loaded. Output Map selects a valid screen instead of the former blank All Screens option.
+- Added Run test sequence to Pixel Map. It continues into 3D, respects Across Map/Per Slice scope and remains live across workspaces when Windowed output is open.
+- Updated the Pixel Map icon and 3D toolbar icons, unified imported-model hierarchy styling, constrained long names, preserved expanded branches and removed redundant tools/help text from the interface.
+- Rebuilt the illustrated manual around linked sections, search, adjustable text size, enlarged screenshots and an integrated shortcut reference. Manual versioning follows the application.
+- Fixed malformed optional model attributes, worker compatibility for FBX files containing cameras/images, and triangulation of certain curved FBX extrusions. Reimport affected models to apply geometry fixes.
+- Improved OBJ unit guidance and retained the 1920 × 1080, 30 fps target for native 3D output with antialiasing and distant-screen depth corrections.
+
+### Compatibility
+
+- Keep a separate copy of projects needed in v0.7.0. Imported-model projects require v0.8.0 or later.
+- NDI/Spout and native always-on-top output require Windows. GPU/VRAM telemetry requires supported NVIDIA driver telemetry; other systems retain the available performance readings.
+- Imported stages are static geometry. Lighting simulation, animation playback, polygon reduction, DWG and Technical Plots are not included.
+- USD-family import and complex referenced/layered scenes remain experimental. Verify exported units, geometry and supported materials in the receiving application.
+- Web packages remain in separate deployment storage; public release downloads contain the Windows installer and its checksum.
 
 ## [0.7.0 Beta] - 2026-09-06
 

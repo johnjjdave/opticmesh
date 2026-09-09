@@ -10,11 +10,11 @@ class Surface extends EventTarget {
   getRootNode() { return this.ownerDocument; }
   getBoundingClientRect() { return { left: this.left, top: this.top, width: 320, height: 240 }; }
 }
-function fixture(index, orthographic = true) {
+function fixture(index, orthographic = true, zoomObjects) {
   const surface = new Surface(100 + (index % 2) * 320, 80 + Math.floor(index / 2) * 240);
   const camera = orthographic ? new THREE.OrthographicCamera(-4, 4, 3, -3, 0.01, 500) : new THREE.PerspectiveCamera(42, 4/3, 0.01, 500);
   camera.position.set(0, 0, 10);
-  const pair = createViewportControls(camera, surface, 'world');
+  const pair = createViewportControls(camera, surface, 'world', zoomObjects);
   pair.controls.enableDamping = false;
   camera.updateMatrixWorld();
   return { surface, camera, ...pair };
@@ -72,4 +72,66 @@ test('each pane gizmo transforms the shared object through one begin/change/comm
       assert.ok(views.every(v=>v.transform.object===proxy));
     }
   } finally { views.forEach(v => { v.controls.dispose(); v.transform.dispose(); }); }
+});
+
+
+test('perspective zoom passes a stale orbit target and preserves the cursor ray on scene geometry', () => {
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+  const views=[0,1,2,3].map(i=>fixture(i,false,()=>[mesh]));
+  try {
+    for(const view of views){
+      view.controls.target.set(0,0,9.9);view.controls.update();
+      const anchor=pointOnPlane(view.camera,235,85);
+      const before=view.camera.position.clone();
+      wheel(view,235,85);
+      assert(view.camera.position.distanceTo(before)>.5,'distance follows the surface, not the exhausted orbit radius');
+      assert(anchor.distanceTo(pointOnPlane(view.camera,235,85))<1e-7,'surface remains under pane cursor');
+      for(let i=0;i<150;i++)wheel(view,160,120);
+      const close=view.camera.position.clone();wheel(view,160,120);
+      assert(view.camera.position.distanceTo(close)>.01,'close-up zoom keeps moving');
+    }
+  } finally {views.forEach(v=>{v.controls.dispose();v.transform.dispose();});mesh.geometry.dispose();mesh.material.dispose();}
+});
+
+test('empty/hidden geometry cannot trap perspective travel; disabled controls do not rebase', () => {
+ const hidden=new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.MeshBasicMaterial());hidden.visible=false;hidden.position.z=9.8;hidden.updateMatrixWorld();
+ const view=fixture(0,false,()=>[hidden]);
+ try {
+  view.controls.target.set(0,0,9.9);view.controls.update();
+  const before=view.camera.position.clone();wheel(view,160,120);
+  assert(view.camera.position.distanceTo(before)>.05,'empty space maintains forward travel');
+  view.controls.enabled=false;const target=view.controls.target.clone();
+  const e=new Event('wheel',{cancelable:true});Object.assign(e,{clientX:260,clientY:200,deltaY:-120,deltaMode:0,ctrlKey:false});view.surface.dispatchEvent(e);
+  assert(view.controls.target.equals(target));
+ } finally{view.controls.dispose();view.transform.dispose();hidden.geometry.dispose();hidden.material.dispose();}
+});
+import { createZoomSurfaceQuery } from '../app/viewport-controls.ts';
+
+test('zoom depth uses transformed bounds for dense meshes without touching their triangles', () => {
+ const geometry=new THREE.PlaneGeometry(20,20,150,150);geometry.computeBoundingBox();
+ const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+ mesh.position.set(0,0,-4);mesh.rotation.y=.2;mesh.scale.set(2,1,3);mesh.updateMatrixWorld();
+ mesh.raycast=()=>{throw new Error('Dense mesh triangle scan during zoom');};
+ const ray=new THREE.Raycaster(new THREE.Vector3(0,0,10),new THREE.Vector3(0,0,-1)),query=createZoomSurfaceQuery(ray);
+ try {
+  assert(Math.abs(query([mesh])-14)<1e-7,'rotated and scaled local bounds preserve navigation depth');
+  mesh.position.z=-8;assert(Math.abs(query([mesh])-18)<1e-7,'moving a model refreshes navigation bounds');
+  const parent=new THREE.Group();parent.add(mesh);parent.visible=false;assert.equal(query([mesh]),undefined,'hidden ancestor excluded');
+ }finally{geometry.dispose();mesh.material.dispose();}
+});
+
+test('zoom triangle work stays bounded across many meshes while selection remains exact', () => {
+ const geometry=new THREE.PlaneGeometry(20,20,10,10);geometry.computeBoundingBox();
+ const material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide}),objects=[];let trianglesTested=0;
+ for(let i=0;i<180;i++){
+  const mesh=new THREE.Mesh(geometry,material);mesh.position.z=-200+i;mesh.updateMatrixWorld();
+  const original=mesh.raycast.bind(mesh);mesh.raycast=(ray,hits)=>{trianglesTested+=200;original(ray,hits);};objects.push(mesh);
+ }
+ const ray=new THREE.Raycaster(new THREE.Vector3(0,0,10),new THREE.Vector3(0,0,-1));
+ try {
+  assert.equal(createZoomSurfaceQuery(ray)(objects),31);
+  assert(trianglesTested<=20000,'aggregate triangle cost is bounded');
+  trianglesTested=0;assert.equal(ray.intersectObjects(objects,false)[0].distance,31);
+  assert.equal(trianglesTested,36000,'normal selection raycasts retain the original geometry');
+ }finally{geometry.dispose();material.dispose();}
 });

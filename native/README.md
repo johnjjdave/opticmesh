@@ -1,6 +1,6 @@
 # LO2S - OpticMesh native source bridge
 
-This Windows-only helper receives real NDI and Spout frames for the 3D simulation and publishes the generated Resolume Pixel Map test pattern through one selected output protocol. It keeps native SDK work outside the browser renderer.
+This Windows-only helper receives real NDI and Spout frames for the 3D simulation and publishes the generated Resolume Pixel Map or 3D camera preview through one selected output protocol. It keeps native SDK work outside the browser renderer.
 
 The OpticMesh NSIS installer embeds the official NDI 6 Runtime redistributable and runs it only when no compatible NDI 5/6 x64 Runtime is detected. Release builds obtain the redistributable from `https://ndi.link/NDIRedistV6` and verify the pinned SHA-256 before packaging. NDIÂ® is a registered trademark of Vizrt NDI AB.
 
@@ -8,7 +8,7 @@ The OpticMesh NSIS installer embeds the official NDI 6 Runtime redistributable a
 - NDI frames use a three-slot Windows shared-memory ring consumed by an Electron Node-API addon. Only the final reusable-buffer copy and canvas/GPU upload remain in the renderer. Live metrics report capture, publication and display rates, conversion time, shared-memory copy time, canvas upload time and overwritten frames.
 - Spout uses the official Spout2 `SpoutLibrary` receiver and enumerates actual Spout senders.
 - Video Devices remain on Chromium's existing `getUserMedia` path.
-- Output accepts full-resolution RGBA frames, retains the latest generated pattern, and continuously publishes it through either NDI or Spout. A changed Advanced Output map can replace the frame and dimensions without restarting the app.
+- 3D camera output is limited to a maximum 1920 × 1080 raster at 30 FPS, preserving the camera aspect ratio. Pixel Map output uses the map raster. The bridge accepts RGBA frames, retains the latest generated pattern, and continuously publishes it through either NDI or Spout. A changed Advanced Output map can replace the frame and dimensions without restarting the app.
 
 ## Components and builds
 

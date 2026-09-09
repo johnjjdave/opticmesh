@@ -1,6 +1,6 @@
 {
   "name": "opticmesh",
-  "version": "0.7.0-beta",
+  "version": "0.8.0-beta",
   "private": true,
   "description": "LO2S - OpticMesh LED test-pattern, Resolume pixel-map, and 3D simulation workspace.",
   "license": "MIT",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@types/three": "^0.185.1",
+    "@xmldom/xmldom": "^0.9.12",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/workers-types": "4.20260515.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",

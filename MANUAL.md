@@ -1,16 +1,12 @@
 # LO2S - OpticMesh Software Manual
 
-**Application:** LO2S - OpticMesh  
-**Manual version:** 0.1  
-**Applies to:** LO2S - OpticMesh v0.7.0 Beta  
-**Last updated:** 2026-09-07  
-**Status:** Living Beta documentation
+**Manual version:** 0.8.0
 
 LO2S - OpticMesh is an LED test-pattern, Resolume pixel-map, and physically scaled 3D simulation application designed by LO2S. Use this manual to learn the workspaces, controls, shortcuts, and export workflows. Open it offline through **Help → OpticMesh Manual** or **Guide**; use **Help → Keyboard Shortcuts** for the control reference.
 
 ## Contents
 
-In the in-app Manual, click a Contents link to jump to that section. Keyboard users can Tab to a link and press Enter; focus moves to the destination heading.
+In the in-app Manual, choose a section in the left navigation to open its topic on the right. Search finds topics by title or content. Use **Text size** to adjust reading size; screenshots open in a larger view with zoom controls. Keyboard users can Tab to a section link and press Enter; focus moves to the topic heading. **Help → Keyboard Shortcuts** opens the keyboard and mouse section in this same guide.
 
 1. [What LO2S - OpticMesh does](#1-what-lo2s---opticmesh-does)
 2. [Installation and first launch](#2-installation-and-first-launch)
@@ -29,6 +25,10 @@ In the in-app Manual, click a Contents link to jump to that section. Keyboard us
 15. [Troubleshooting](#15-troubleshooting)
 16. [Projection formats and current limitations](#16-projection-formats-and-current-limitations)
 17. [Terminology](#17-terminology)
+
+[Windowed output controls](#105-windowed-output)
+
+[Importing stage models](#stage-model-import-v080)
 
 ---
 
@@ -117,13 +117,15 @@ Changing workspace does not create a new project. All three workspaces belong to
 
 - **Top bar:** File, Export, Output, Tools, Help, About, and Undo/Redo.
 - **Project bar:** project name, save status, notifications, and Studio/Focused layout controls.
-- **Left mode rail:** Patterns, Pixel Map, 3D, and Guide.
+- **Left mode rail:** Patterns, Pixel Map (outlined Resolume symbol), 3D, and Guide.
 - **Tools panel:** searchable tools for the active workspace. Focused mode hides this panel to give the viewport more room.
 - **Central viewport and toolbar:** the pattern, map, or 3D scene with its editing and viewing controls.
 - **Right inspector:** settings and selection details for the active workspace.
 - **Bottom diagnostics:** validation, map changes where available, output status, and performance measurements.
 
 Patterns inspector tabs are **Setup**, **Overlays**, and **Logo**; Pixel Map uses **Source**, **Geometry**, **Info**, and **Style**; 3D uses **Scene**, **Geometry**, and **Source**. Export commands are in the top **Export** menu. Patterns background and Run test sequence are in **Setup → Pattern presentation**.
+
+Interface labels and buttons do not select text when dragged across. Text fields still support selection, copying and editing, including names, searches and coordinate expressions. Scene-object selection and hierarchy range selection work normally.
 
 ### 3.3 Notifications
 
@@ -180,7 +182,7 @@ A `.lo2s` file is self-contained. It stores:
 - per-slice overrides;
 - 3D transforms, pivots, extrusion, and curvature;
 - hierarchy groups, subgroups, order, visibility, locks, and collapse state;
-- source routing and quality settings;
+- source routing and quality settings (v0.8.0 starts with Pattern Generator on load; see section 10.1);
 - camera and viewport state.
 
 Do not edit a `.lo2s` file manually unless you are diagnosing a damaged project and have made a backup.
@@ -206,7 +208,11 @@ Background autosave always writes to the managed startup/recovery files. It neve
 - **Open demo project:** loads a sample scene for exploring the mapping and 3D tools.
 - **Reveal Projects folder:** opens `Documents\OpticMesh\Projects`.
 
-**File → Open Demo** and **3D → Load Demo Scene** open the sample project in 3D; **Pixel Map → Load Demo Map** opens it in Pixel Map. Loading the demo replaces the current working state and disconnects any linked XML file. Save your current project first if you want to keep it.
+**File → Open Demo** and **3D → Load Demo Scene** open the sample project in 3D; **Pixel Map → Load Demo Map** opens it in Pixel Map. Loading the demo replaces the current working state and disconnects any linked XML file.
+
+**Before replacing a project:** New Project and every demo command open a centred confirmation with **Cancel**, **Continue without saving**, and **Save and continue**. Cancel or Escape keeps the current project. Cancel is focused initially; Tab and Shift+Tab cycle between the available actions. Save and continue saves to the active named project, or opens Save As when a named destination is needed; replacement happens only after a successful save. A cancelled or failed save leaves the project and confirmation open. Controls are temporarily disabled while saving.
+
+The confirmation also appears after autosave: startup recovery follows the current working project and is not a permanent named backup. Project replacement clears the scene Undo history, so Ctrl+Z cannot restore the preceding project after choosing to continue. In browsers that can only download files, verify the downloaded `.lo2s` file before explicitly choosing Continue without saving; requesting a download does not automatically replace the project.
 
 ### 5.4 Compile Project
 
@@ -315,7 +321,11 @@ The default map background is transparent. Select **Black** when a solid backgro
 
 ## 7. Resolume Pixel Map workspace
 
+The Pixel Map navigation button uses the outlined Resolume Arena A to identify the Resolume mapping workspace.
+
 ### 7.1 Importing an Advanced Output XML
+
+Without a Resolume map, Pixel Map displays the transparency checkerboard with **Import a Resolume XML map** centred in the viewport. Use **Tools → Advanced Output XML → Choose XML…** or **Load Demo Map** to populate it. The standalone test pattern appears only in Patterns mode.
 
 Use one of two methods:
 
@@ -329,7 +339,11 @@ The linked workflow is available in the installed Windows application. Unlink th
 - **Input Map** shows slice crops inside the Resolume composition.
 - **Output Map** shows the selected screen's output-device arrangement.
 
-Select the active Resolume screen when reviewing or exporting output maps.
+In v0.8.0, Output Map starts with the first available screen. Choose another screen under **Tools → Map Display → Screen**; switching to Input Map and back retains that choice. Input Map already includes all screens in the composition and needs no screen selector. Output Map displays one real screen at a time; use **Export → All Output Maps** to export every screen as a separate map.
+
+**Pattern scope in 3D:** **Across Map** uses the full input composition as one pattern; each LED screen shows the portion at its input-map position. **Per Slice** restarts the pattern on each screen. This scope is retained during the test sequence and in Windowed output for surfaces using the pattern source.
+
+**Tools → Pattern Fill → Run test sequence** cycles through Cabinet Checker, Metric Grid, Cabinet IDs, Color Bars, Grayscale and Pixel Check every three seconds, starting after the current fill and looping. It works with Input and Output maps and retains **Per Slice / Across Map** scope. Load a map to enable the toggle. Switch it off to keep the current fill for inspection or export. The sequence continues between Pixel Map and 3D without restarting its three-second interval. In 3D, LED surfaces using the pattern source show the changing fills; other assigned media retain their source. With Windowed output open, the map sequence also keeps running while editing in Patterns. Otherwise it pauses in Patterns and resumes on return to Pixel Map or 3D if still enabled. Turn it off in Pixel Map; its toggle is independent of the Patterns sequence. It changes the map's global fill, not its geometry or slice selection.
 
 ### 7.3 Pixel pitch and physical scale
 
@@ -410,7 +424,9 @@ LO2S - OpticMesh chooses the central or most prominent screen as the automatic l
 
 ### 8.2 Viewport navigation
 
-The outline around the whole 3D viewport is a **keyboard-focus indicator**, separate from selected slice edges and gizmos. It appears when you reach the viewport with **Tab/Shift+Tab** and clears when you click or drag inside it. Mouse interaction still activates viewport shortcuts such as **Ctrl+A**; using E/R/T or returning from a field does not add an outline.
+Switching to Pixel Map or Patterns and returning to 3D preserves the camera position and framing. Perspective and each Top, Right and Front view keep their own pan and zoom, including in All Views. Previous Fit Scene or Focus actions are not repeated when returning. Use **Fit Scene / F** or **Focus / S** when you want to change the framing. Opening a different project uses that project's saved camera; a new project starts with its default view.
+
+The outline around the whole 3D viewport is a **keyboard-focus indicator**, separate from selected object edges and gizmos. It appears when you reach the viewport with **Tab/Shift+Tab** and clears when you click or drag inside it. Mouse interaction still activates viewport shortcuts such as **Ctrl+A**; using E/R/T or returning from a field does not add an outline.
 
 | Action | Control |
 |---|---|
@@ -418,12 +434,17 @@ The outline around the whole 3D viewport is a **keyboard-focus indicator**, sepa
 | Pan camera | Right-drag |
 | Zoom toward pointer | Mouse wheel |
 | Fit all scene objects | **Fit scene** |
-| Focus selection | **Focus** in the hierarchy actions |
+| Frame selection | **Focus** above the viewport, or `S` over the viewport |
+| Reveal selection in the list | **Focus** in the hierarchy actions, or `S` while hovering or focused in Scene Hierarchy |
 | Select object | Click a screen |
 | Toggle object in selection | `Ctrl`-click or `Shift`-click |
 | Add objects with marquee | `Ctrl`-drag empty viewport space |
 
 Camera state is saved with the project.
+
+Selected imported models and parts show a thin, muted silhouette around their visible selection. Internal polygon edges and seams between touching selected parts are not highlighted, so materials remain readable while editing. Selecting a group outlines the combined visible shape of its mesh descendants. The highlight follows transforms and clears when deselected, hidden or removed. These editing highlights are excluded from Windowed output, NDI/Spout output and scene exports.
+
+Selected items have a highlighted, bold hierarchy row. Ancestor groups show a subtler highlight and bold name, including when collapsed, so you can trace the selection without selecting those groups. To find a selected item, hover over Scene Hierarchy and press **S**, or click its **Focus** button. This clears the hierarchy search, expands the selected paths and scrolls to the selected row; with multiple items selected, it reveals the last selected model item, group or slice in that order. Camera framing stays unchanged. Press **S** over the viewport to frame the selection instead. Search and rename fields keep S as text.
 
 ### 8.3 Transform tools
 
@@ -438,11 +459,23 @@ Position values are stored in metres. Rotation values are displayed in degrees a
 
 Hold `Shift` while dragging the rotation gizmo to snap in 5° increments. Numeric entry always remains exact and is not quantized. Hold `Shift` while dragging a scale handle to apply the same relative scale factor on X/Y/Z, preserving the initial proportions. You can press or release Shift during the drag. This works for individual objects, multi-selection and groups in single view or All Views; one drag creates one undo step.
 
-In the **Scene** inspector, **Coordinates** contains the Position, Rotation, and Scale fields. **Pivot** comes immediately after Coordinates, followed by **Align Centres**, **Distribute Centres**, and **Scene Display**.
+In the **Scene** inspector, **Coordinate System** selects Local or World orientation for the transform gizmo. **Coordinates** contains the Position, Rotation, and Scale fields. **Pivot** comes immediately after Coordinates, followed by **Align Centres**, **Distribute Centres**, and **Scene Display**.
 
-**Tools → Align** opens the Scene inspector and scrolls directly to **Align centres**, with the first axis button focused. **Tools → Distribute** does the same for **Distribute centres**. Choose an axis to apply the operation. Align requires at least two selected slices; Distribute requires at least three.
+Use **Scene → Align centres** or **Distribute centres** in the right inspector, then choose an axis to apply the operation. Align requires at least two selected slices; Distribute requires at least three. These controls are available directly in the inspector without duplicate shortcuts in the left Tools panel.
 
 **Tip:** use Coordinates for exact numeric edits, set the pivot below it, then use the alignment and distribution controls to arrange the selection.
+
+The 3D viewport toolbar uses icons: four-way arrows for **Move (E)**, a circular arrow for **Rotate (R)**, diagonal arrows for **Scale (T)**, a magnet for **Snap**, axes for **Local**, and a globe for **World**. Hover over an icon for its name and available shortcut. Active icons stay highlighted. The labelled Local/World controls also remain in **Scene → Coordinate System**.
+
+### Transfer position and orientation
+
+Select one unlocked LED slice, imported mesh, imported model root or editable group, then choose **Tools → Arrange → Transfer**. A transfer cursor appears over the viewport. Click a different visible slice or imported object to match its geometric centre and orientation. This also works in All Views. To move several items together, group them first; a mixed group transfers as one assembly.
+
+Transfer compensates for the source and target pivots internally. A bottom-centre slice can align with a centred imported object without changing either pivot. Geometric centre means the centre of the geometry bounds in the object's oriented frame, including extrusion; it is not a surface attachment point. Size, proportions, materials, LED mapping and hierarchy remain unchanged. The target stays unchanged and may be locked. A source containing locked items cannot be transferred.
+
+**Escape** or clicking Transfer again cancels target picking. Clicking empty space or the source itself keeps the tool ready for a valid target. Changing selection, workspace or transform tool cancels picking. A completed transfer exits the tool and creates one **Undo/Redo** action; the resulting placement is saved with the project.
+
+Orientation follows the target object's coordinate axes. Geometry exported with rotations baked into its vertices may have axes that differ from the visible screen face. Transfer does not infer face normals, resize the slice or establish a live attachment to the target.
 
 ### 8.4 Pivots
 
@@ -454,11 +487,11 @@ The pivot editor combines **Mode**, manual **Pivot (m)** XYZ values, and a dragg
 - With the pad focused, arrow keys move between anchors and Home chooses Centre. Escape cancels an active drag. Presets/pad snaps set Z to zero.
 - Numeric fields support arithmetic, wheel adjustments, and Shift+wheel for larger steps. Press Enter to commit. For mixed selections, editing one axis preserves each screen’s other axes.
 
-The editor applies only to selected unlocked slices. With no selection, Mode, the XY pad and XYZ values are greyed out and cannot change any slice or the default pivot. Selecting one or multiple unlocked slices enables the editor; an entirely locked selection remains disabled. Named anchors adapt to each screen’s dimensions; Custom uses absolute local metre offsets. Changing a pivot keeps the visible screen in place, including curved, rotated, or scaled screens. Coordinates may change because they track the new pivot. Undo/redo, project saving, and exports retain the pivot.
+The editor applies to selected unlocked slices, screen groups, imported models and imported parts. With no selection, Mode, the XY pad and XYZ values are greyed out and cannot change any slice or the default pivot. Selecting one or multiple unlocked items enables the editor; an entirely locked selection remains disabled. Named anchors adapt to each screen’s dimensions; Custom uses absolute local metre offsets. Changing a pivot keeps the visible screen in place, including curved, rotated, or scaled screens. Coordinates may change because they track the new pivot. Undo/redo, project saving, and exports retain the pivot.
 
-**Tip:** choose a named anchor for a size-relative pivot, or use Custom for an exact measured offset. Select individual slices inside a group to edit their pivots.
+**Tip:** select a group to edit its shared pivot, or select its individual members to edit their own pivots. Choose a named anchor or use Custom for an exact measured offset.
 
-Groups use a group axis based on the combined world-space geometry bounds of their children. Custom group-axis placement is unavailable.
+In v0.8.0, screen groups and imported model items use the same nine-position pad and custom XYZ controls. Offsets are measured from the combined bounds centre along the selected item’s axes. Screen-group offsets use the group’s local metre coordinates; imported-model offsets are shown in metres after source-unit conversion. Presets choose the current bounds and zero the depth offset. Repositioning a pivot preserves all visible geometry and nested child placement. Imported model Coordinates and the viewport gizmo use each item’s pivot for rotation and scaling. Multiple selected model items use a shared gizmo at the average of their pivots, counting selected parents only once. Pivot choices are saved with the project and support Undo/Redo.
 
 ### 8.5 Extrusion depth
 
@@ -523,6 +556,8 @@ Group transforms are true parent transforms. Child slices keep editable local tr
 
 If a selected parent and one of its selected descendants are transformed together, only the highest selected parent receives the transform. This prevents the descendant from moving twice.
 
+**Imported-model range selection:** click the first item, scroll to the last and Shift-click it to select every model row in between. Scrolling and switching inspector tabs retain the anchor. Ctrl-click toggles one item; Ctrl+Shift-click adds a range. Expand any branches whose children you want included before selecting the range.
+
 ### 9.3 Creating a group
 
 1. Select one or more ungrouped slices.
@@ -549,7 +584,7 @@ Reparenting converts transforms so the object does not visibly jump in world spa
 
 ### 9.6 Collapse and expand
 
-Use the disclosure arrow beside a group to collapse or expand its children. The expanded state is saved in the project. Searching the hierarchy temporarily reveals matching descendants.
+All groups use the same four-square icon, whether they contain screen slices or imported model parts. Use the separate disclosure arrow beside a group to collapse or expand its children. The expanded state is saved in the project. Searching the hierarchy temporarily reveals matching descendants.
 
 ### 9.7 Visibility and locking
 
@@ -561,9 +596,102 @@ Use the disclosure arrow beside a group to collapse or expand its children. The 
 
 ### 9.8 Ungrouping
 
-Choose **Ungroup** to remove selected groups. Child world placement is preserved. Nested children are reattached safely to the next valid parent or scene root.
+Choose **Ungroup** to dissolve selected groups while preserving world placement. In v0.8.0, direct Resolume slice children return to their original screen containers, retaining their current position, rotation and scale. Surviving nested editable groups and imported items retain a valid scene parent.
 
 ---
+
+### Stage model import (v0.8.0)
+
+In **3D → Tools → 3D Models**, choose **Import Model…**. Use **Choose files** for a model and its companion files, or **Choose folder** to retain asset-folder paths. The left side contains the main-model selector, scale/orientation and hierarchy controls. Press **Read model** to inspect the larger preview on the right, with separate Width (X), Height (Y), Depth (Z), mesh and triangle readouts. **Cancel** and **Import into scene** stay in the bottom action bar. Supported formats are available in an expandable list. Choose **Cancel** to stop loading without changing the scene.
+
+Before importing, inspect the preview and resulting dimensions. Set **Source units** to mm, cm or metres and select Y-up or Z-up. Formats with built-in unit conversion expose their decoded units in this dialog. Use the dimension readout to confirm the intended physical size. The source origin is retained.
+
+**MVR scale and orientation are automatic.** MVR scene coordinates and embedded 3DS geometry use millimetres internally; embedded glTF geometry is converted according to its own convention. OpticMesh handles these conversions and shows final dimensions in metres. The authoring application's displayed units do not change MVR's coordinate convention, so no manual source-unit or up-axis choice is required for MVR.
+
+OBJ and STL do not reliably declare physical units, so **Source units must be chosen explicitly** before import. A centimetre-based model interpreted as metres becomes 100 times too large; fitting it can move the camera beyond the floor/grid area and make LED screens appear tiny. Correct the import units rather than changing the scene display settings.
+
+**Polygon conversion:** Imported surfaces are represented as triangles for rendering. Quads and larger polygons may be split by the format loader; this is not polygon reduction. Different splits of non-planar faces, unsupported subdivision surfaces or differences in surface normals can change the appearance. FBX curved extrusions with matching translated contours are split along their existing segments to preserve the curved surface. Other polygon layouts use the format loader. Inspect curved and concave surfaces in the import preview. Reimport a model to apply importer corrections; previously saved geometry is not rewritten automatically. Where an exporter supports it, exporting an evaluated triangle mesh with normals can give the source application control over the split. Original files are not modified.
+
+Review import warnings before confirming. Invalid surface normals are regenerated and invalid UV coordinates are omitted without changing valid vertex positions. If a vertex position or object transform is invalid, import stops and identifies the affected item; check that item in the source application before exporting again.
+
+**Import model hierarchy** is enabled initially. It preserves supported object boundaries and nested groups beneath a dedicated **3D Model — filename** root in Scene Hierarchy. Turn it off to select and move the imported model as one item. A single selectable item retains the underlying mesh detail; it is not polygon reduction. Switching this option keeps the preview and its camera view unchanged; the choice is applied when importing into the scene.
+
+Open the **Scene** inspector tab to find imported models inside the main hierarchy below the screen groups. Import clears the hierarchy search and reveals the new model selection.
+
+Long model and part names are shortened with an ellipsis in the hierarchy and inspector. Hover over a shortened name to see its complete value. Selecting a long name keeps the panel and viewport widths unchanged.
+
+Screens and imported models use the same hierarchy row layout, selection highlight, eye visibility controls and open/closed lock icons. Use the disclosure arrow to expand a model or group; mesh parts use the shared object icon. Visibility and lock actions do not change the current selection. Screens and imported models share one hierarchy scrollbar. Expanded model branches remain available in that same scrolling area.
+
+| Import format | Scope and limits |
+| --- | --- |
+| MVR 1.4 / 1.5 / 1.6 | Scene mesh resources, transforms, symbols and their supporting groups/layers. Lighting-fixture definitions, patch addresses, focus points and empty metadata branches are excluded. Embedded GDTF definitions are not expanded; standalone GDTF remains a separate static-geometry import. |
+| GDTF 1.1 / 1.2 | Static physical device geometry and component hierarchy. Some predefined shapes use dimensioned box placeholders. Beams, DMX response and fixture simulation are excluded. |
+| glTF 2.0 / GLB | Static mesh scenes and hierarchy. Include companion buffers where required. Assets requiring an unavailable compression decoder or extension cannot be imported. |
+| FBX | Supported ASCII 7.0+ and binary 6400+ mesh scenes. Verify units and placement in the preview. Skinned meshes use a static pose. Source cameras and lights are excluded; their presence does not prevent mesh import. Source image textures are not imported. |
+| OBJ | Meshes and named object/group boundaries; original nested assemblies may not be represented. |
+| 3DS | Mesh geometry and names. Legacy keyframer hierarchy is not preserved. |
+| COLLADA / DAE | Supported static meshes and scene hierarchy, with source unit/axis conversion. |
+| STL | Triangle geometry; source units and meaningful object hierarchy may be absent. |
+| USD / USDA / USDC / USDZ | Experimental static geometry support. Advanced composition, references, animation and materials may not be reproduced. |
+
+Expanded and collapsed model branches stay as you left them when switching between Scene, Geometry and Source. This is workspace UI state; opening another project starts with its model hierarchy collapsed.
+
+### Imported-model materials
+
+All imported models initially use subdued **neutral shading**. Source textures, lights and animation are excluded. Select a model, group or part and open **Material** in the bottom panel, before Validation. This tab appears only in 3D mode. **Display** offers **Shaded**, **Wireframe**, or **Inherit**. A part inherits its closest parent display setting unless overridden, including through shared groups containing LED slices and imported models. This affects the stage reference only; LED screen content remains unchanged. Wireframe draws the mesh's triangle edges as thin GPU lines, not a texture or strips of polygon geometry. Triangle diagonals are visible; this display mode is separate from the selection silhouette. **Diffuse colour** sets line colour and **Diffuse intensity** sets brightness. Wireframe lines are unlit and receive no HDR reflections. Metallic, Roughness and Specular apply only to shaded surfaces; these controls are disabled when the selected items use wireframe, and their stored values return on switching to Shaded. Inheritance, multi-selection and Undo work for line colour. LED extrusion wireframes use the same colour/intensity controls while display faces retain their content. Wireframe improves technical readability but does not guarantee faster rendering.
+
+**Material controls**
+
+| Control | Effect |
+| --- | --- |
+| Material: Inherit / Custom | Follow the closest parent material or use an independent material. Editing a value creates a Custom override; choosing Inherit restores the parent appearance. |
+| Diffuse colour | Base surface colour. |
+| Diffuse intensity | Strength of the base colour, from 0–100%. |
+| Metallic | Blend from a non-metal surface to a metal surface. Higher values reduce diffuse lighting and tint metallic highlights with the base colour. |
+| Roughness | Low values give tight highlights; high values spread and soften them. |
+| Specular | Strength of non-metal light highlights. Its influence decreases as Metallic approaches 100%. |
+
+Changes preview live and support Undo/Redo and project saving. Colour dragging uses one Undo action per gesture; the final colour is applied when editing ends. Multiple selections show common values or **Multiple values**; edits apply to selected unlocked items. Double-click a slider to reset its built-in default: Diffuse 100%, Metallic 5%, Roughness 82%, Specular 100%. Locked or empty selections cannot be edited. Shading settings are retained while Wireframe is active.
+
+**Tip:** start with a low Metallic value and moderate Roughness for readable stage reference geometry. The selected HDRI supplies reflections that help make smooth metallic surfaces readable. It applies only to imported-model materials and LED extrusions: it never appears in the background or changes the floor or LED display faces. It does not reflect live LED imagery or the actual stage. Normal maps, displacement and dynamic reflections are not part of these controls. Material appearance is included in GLB/glTF and their MVR mesh resources; OBJ and USDZ use the material properties supported by those formats, so their appearance can differ. STL contains geometry only.
+
+### Editing imported models
+
+Use **Scene → Coordinates** or the viewport gizmo to position selected model items. Screens, screen groups and imported model items share the same Coordinates controls and appearance. All support arithmetic expressions, 0.1 wheel/step adjustments, 0.5 adjustments with Shift, and live position/rotation/scale updates while dragging. Focused numeric fields prevent the inspector from scrolling. Differing selected values show an em dash; an absolute coordinate edit applies to each selected item while preserving its other axes. E/R/T select Move/Rotate/Scale; S frames the model selection over the viewport or reveals it over the hierarchy; F fits visible scene content. In the hierarchy, Ctrl-click toggles individual model items and Shift-click selects the continuous range from the anchor row to the clicked row. Ctrl+Shift-click adds that range to the existing selection. Ranges follow the displayed imported-model row order across imports and shared groups, including offscreen rows; collapsed children and search-filtered rows are excluded. Repeated Shift-clicks extend or shrink the range from the same anchor. In the viewport, Ctrl/Shift-click continues toggling individual meshes. Ctrl-drag a box in the viewport to add visible model parts; with hierarchy import disabled, it selects whole imported models. Box selection also works within each All Views pane. It extends the active selection type (models or screens); when nothing is selected, visible model hits take priority over screen hits. Click empty space to clear selection before switching types. With an imported model selected and the viewport focused, Ctrl+A selects imported model roots; otherwise it selects screen slices. Ctrl-click LED slice and imported-model rows to build a mixed selection, then use **Group** or **Ctrl+G** to create one group. Groups can contain LED slices, imported parts and nested groups. Group/Ungroup preserve world placement. Arbitrary mesh segmentation is not available.
+
+**Resolume screen containers are source-owned.** A screen header (monitor icon) contains only slices belonging to that screen in the XML. Imported objects and editable groups cannot be placed inside it, and a slice cannot be reassigned to a different Resolume screen. Slices may join editable scene groups, including mixed groups, while retaining their original source ownership. Drag a grouped slice back onto its original screen header or use **Return to original screen**. Screen headers remain visible even when all their slices are grouped elsewhere. Removing or ungrouping editable containers never deletes Resolume slices or changes their source mapping.
+
+Drag a model part, imported root or group onto a group to change its parent. Drop near the top or bottom of a model row to reorder siblings; drop onto **Move to scene root** to detach an imported item or group. A Resolume slice uses **Return to original screen**. LED slices can also be dropped into imported-model groups. Their necessary parent groups join the shared hierarchy, preserving names, nested structure, geometry placement and material appearance. Locked branches and parent cycles are protected.
+
+Double-click an imported item or group name to rename it. **Enter** or clicking outside commits the name; **Escape** cancels. Blank names are ignored. Rename, grouping and parenting support Undo/Redo and project saving. A mixed group moves, rotates and scales its LED slices and imported geometry together; the Coordinates fields update while dragging. Its pivot uses their combined bounds. Group visibility and locks apply to both kinds of content. **Delete** or **Remove selected groups** removes the selected editable group branch and its removable imported contents. Resolume slices return to their original screen containers with their current position, rotation and scale preserved; their XML links and IDs remain intact. Directly selected Resolume slices cannot be deleted. GLB/glTF retain shared group parents; mesh-only export formats retain world placement.
+
+Model visibility and locks appear in the hierarchy. Remove selected model items from their inspector. Import, edits, grouping and removal support Undo/Redo. All Views, Windowed output and 3D streaming display imported geometry; the Windowed preview remains camera-only.
+
+Deleting the last selected model item clears the viewport gizmo immediately.
+
+Removing a model-only group removes its imported descendants. Locked items and groups containing locked descendants are protected. Undo restores removed items and their geometry.
+
+In 3D mode, **Delete** removes selected imported models, groups or parts. It never deletes screens or Resolume slices. The shortcut is inactive while editing a field, using a menu/dialog, or interacting with the camera-only Windowed preview. Use **Ctrl+Z** to undo removal.
+
+### Imported-model storage and limits
+
+Imported geometry is saved inside the project, so reopening does not depend on the original model file. Projects containing imported models require v0.8.0 or later; keep a separate copy if you also use v0.7.0. Compile Project includes the imported geometry in the project file when a Resolume map is present. Source texture files, animation and other application-specific editing features are not retained.
+
+There is no polygon-count gate. Selected/expanded file data has a 512 MiB import working budget; compressed embedded model data is limited to 150 MiB in total across all imported models, within a 192 MiB desktop project limit. The remaining space accommodates the Resolume XML, logos and project settings. Actual memory use can exceed file size. For heavy files, export only the stage geometry needed for screen alignment. Polygon reduction is not part of this version.
+
+### LED extrusion materials
+
+Select LED slices or a screen group and open **Material** in the bottom panel. The same colour, diffuse intensity, metallic, roughness, specular and Display controls affect only the sides and back of the extrusion. LED display faces retain their source imagery, brightness and texture.
+
+A slice inherits the closest parent-group material/display unless overridden. In a mixed group, group material edits reach both inheriting imported model surfaces and LED extrusions. Explicit child overrides take priority; set **Material** or **Display** to **Inherit** to restore that property's parent setting. Inheritance remains live through nested groups and saved projects. A group edit changes its inherited children together; multiple selections show common or mixed values. **Material → Inherit** removes a custom override. Empty and locked selections cannot be edited. Undo/Redo, project saving and supported scene exports retain extrusion materials. Double-click defaults are Diffuse 100%, Metallic 28%, Roughness 78% and Specular 100%, with the original dark extrusion colour as the inherited default.
+
+The reflection environment is a viewport aid and is not bundled with scene exports. Receiving applications supply their own reflection environment. Projects containing extrusion material overrides use schema 4 and require v0.8.0 Beta or later.
+
+In **Scene Display**, choose **HDRI1**, **HDRI2** or **HDRI3** to compare reflection looks. The three buttons appear side by side in both the left Tools panel and the Scene inspector; either row changes the same setting. The chosen look also updates Windowed output, is saved with the project, and supports Undo/Redo. New projects start with **HDRI1**. **Tip:** lower Roughness to reveal reflection detail, or raise it for a softer surface. These fixed environments affect shaded imported models and LED extrusions; they do not change the background, floor, wireframes or LED display content, and do not reflect live imagery or moving scene objects. The HDRI files are not embedded in projects or scene exports.
+
+### Imported-model transform reset
+
+**Reset transform** in Coordinates restores the recorded transform baseline while retaining the chosen pivot. New imports record their initial placement; model items from older projects without a recorded baseline use their placement before their first edit. Descendant reset baselines follow parent transformations. Reset and numeric edits respect locks and support Undo/Redo.
 
 ## 10. Live sources and routing
 
@@ -579,6 +707,10 @@ The 3D Simulation can use:
 | **Spout** | Discovers and receives a local Spout sender through the Windows native bridge. |
 
 NDI and Spout are desktop-only features.
+
+**v0.8.0 startup:** Opening a project or restoring the latest session starts all LED slices on **Pattern Generator**, with per-slice source routing reset to **Inherit global source**. The 3D inspector opens on **Scene**. To resume a live preview, open **Source**, select the global feed, then choose and connect the sender or device. Reapply individual slice routing where needed. Source quality, scene geometry and materials remain saved.
+
+When a selected live feed has no connected image, its LED display faces show solid black. Connected images retain their normal colours; this does not change the scene background or extrusion materials.
 
 ### 10.2 Source quality
 
@@ -601,23 +733,70 @@ If selected slices have different source routing, the inspector displays a mixed
 
 ### 10.4 Performance status
 
-Open **Performance** below the viewport for live measurements. The panel refreshes twice per second and can be collapsed with the diagnostic-bar chevron. At smaller window sizes, scroll the panel to see all metrics.
+Open **Performance** below the viewport for live measurements. The panel contains readings and their status labels; the colour key, measurement guidance and troubleshooting tips are documented here. The panel refreshes twice per second and can be collapsed with the diagnostic-bar chevron. At smaller window sizes, scroll the panel to see all metrics.
 
 | Metric | Meaning |
 | --- | --- |
-| Render FPS | Actual viewport redraws per second, measured over the last second. A still scene displays **Idle** because no redraw is needed; a hidden window displays **Paused**. This is separate from monitor refresh rate and incoming video FPS. |
+| UI FPS | Live animation-callback cadence while the panel is open and visible. Measures UI scheduling even when the scene is idle; it is not the number of rendered/presented 3D frames or video/output FPS. Display refresh and browser scheduling limit this value. |
+| UI frame · peak | Longest UI callback interval in the last second. Spikes can indicate main-thread stalls or browser/OS scheduling delays. |
+| CPU · app | Combined Electron-process CPU usage, normalized across all logical processors. Requires desktop; external NDI/Spout helper processes are excluded. The first reading needs a sampling baseline. |
+| CPU · system | Whole-machine CPU usage, including other applications and external helpers. Requires desktop. |
+| App memory · private | Combined private committed memory of Electron processes on Windows. This is not exclusively resident RAM and does not include external helpers or VRAM. |
+| RAM · system | Physical RAM used / total for the whole machine. Requires desktop. |
+| GPU / VRAM | Per-device NVIDIA GPU utilization and dedicated memory used / total, including all applications. Requires the desktop app and supported NVIDIA driver telemetry; unavailable readings are not reported as zero. |
+| Viewport redraws / s | Actual viewport redraws per second, measured over the last second. A still scene displays **Idle** because no redraw is needed; a hidden window or manually paused main viewport displays **Paused**. This is separate from monitor refresh rate and incoming video FPS. |
 | CPU render · avg / peak | Average and slowest viewport drawing time during the last second. Includes JavaScript drawing and WebGL submission, but excludes waiting for GPU completion and unrelated application work. |
 | Last CPU draw | Most recent draw duration, retained while idle. |
 | Last GPU draw | Latest valid GPU time for a complete 3D viewport draw, including all visible panes. Optional hardware/browser support is required; unsupported, invalidated and lost-context measurements are labelled explicitly. Canvas 2D GPU timing is unavailable. |
 | Render size | Actual 3D drawing-buffer dimensions or 2D preview raster. An interactive working raster can differ from native export dimensions. |
-| Draw calls / Triangles | Calls and triangles submitted for the latest complete 3D viewport draw, including editor helpers and every pane in All Views. Output capture is excluded. |
+| Scene triangles | Total triangles in LED and imported meshes, including hidden items. Each mesh instance is counted once; camera movement, selection outlines and All Views do not change this total. Geometry changes, imports and deletions update it. Floor, grid and gizmos are excluded. |
+| Draw calls / Drawn triangles | Calls and triangles submitted for the latest complete 3D viewport frame. Camera culling changes which objects are drawn; selection outlines and additional panes can draw geometry again. This measures rendering work, not model size. Output capture is excluded. |
 | Textures / geometries | Renderer-tracked allocated resource counts; these are counts, not memory bytes. |
 
-**Tip:** Move or zoom the scene while watching FPS and CPU/GPU timings, then compare the same interaction in All Views. Higher redraw FPS and lower draw times generally mean more responsive rendering under the same workload. Low FPS while a view is idle does not indicate a slow GPU. GPU time measures this viewport's work; the panel does not report system-wide GPU utilisation or VRAM usage. Monitoring itself never forces a redraw.
+**Reading the counters:** UI FPS continues during an idle view while **Viewport redraws / s** correctly shows **Idle**. OpticMesh renders on demand; an idle reading does not mean poor performance. Monitoring does not force scene redraws. CPU/memory update about once per second and NVIDIA counters about every 2–3 seconds while this panel is visible. Closing it stops polling; hidden windows pause monitoring. Missing, stale or unsupported values are explicit. Localhost in a normal browser shows UI/render measurements; native CPU, RAM and GPU readings require a desktop development session or compatible desktop version.
+
+**Performance colours:** readings use off-white **Normal**, warm amber **Attention**, and soft coral **High pressure**, with a text label beside the value. RAM and VRAM include a percentage alongside used/total memory. GPU utilization and VRAM are rated independently.
+
+| Reading | Normal | Attention | High pressure |
+| --- | --- | --- | --- |
+| CPU, system RAM, VRAM | Below 80% | 80% to below 95% | 95% or above |
+| GPU utilization | Below 90% | 90% to below 98% | 98% or above |
+| UI FPS | 45 or above | 25 to below 45 | Below 25 |
+
+Hover a reading to see its scope and thresholds. UI FPS uses fixed responsiveness thresholds, not a detected display-refresh target. Colours indicate current load or reduced responsiveness, not a prediction of a crash. Idle, paused, missing and stale readings stay neutral; private app-memory bytes and draw statistics have no percentage rating.
+
+If drawing is heavy, hide unnecessary models or pause the main viewport while using Windowed output. For memory pressure, close unused applications or reduce scene complexity; hiding a model does not release its loaded memory.
+
+**Navigation and selection:** Click a mesh to select it. Dragging to orbit or pan preserves the current selection; selecting a mesh is resolved when the click is released. Gizmo dragging and marquee selection keep their dedicated behavior.
+
+**Camera redraws:** The Viewport redraws reading increases while you orbit, pan or zoom. An idle reading is normal when the view is still and no animated content is playing.
+
+**Finding a bottleneck:** compare the same camera movement or source playback across readings. Falling UI FPS with a high UI frame peak can indicate main-thread work, though OS/browser scheduling can also cause it. High GPU utilization with longer GPU draw times can indicate GPU load; high VRAM occupancy indicates memory pressure, but includes other applications. Low overall CPU usage does not rule out one busy CPU core. Compare system usage with app usage before attributing a slowdown to the current scene. No single reading proves the cause.
 
 Native-source status can report source resolution, displayed frame rate, conversion time, copy time, canvas time, and overwritten/missed frames. Performance depends on source resolution, codec, network conditions, GPU, scene geometry, and the number of active feeds.
 
 ---
+
+### 10.5 Windowed output
+
+In **3D**, open **Output → Windowed** to create a camera-only preview. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
+
+| Action | Control |
+| --- | --- |
+| Move the window | Drag the **top-left move handle** |
+| Orbit the preview camera | Left-drag inside the preview |
+| Pan the preview camera | Right-drag |
+| Zoom towards the cursor | Mouse wheel |
+| Resize the window | Drag the **bottom-right corner** only |
+| Close the preview | Small **top-right ×**, **Escape** while preview is focused, or toggle **Output → Windowed** off |
+
+**Pause the main viewport:** With Windowed output open, choose **Output → Pause main viewport**. The editor shows a paused notice and **Resume viewport** button while the undocked preview keeps its camera and live updates. The pause applies to the main 3D view, including All Views; Pixel Map and Patterns remain editable. Closing Windowed output automatically resumes the main view. This setting is temporary and is not saved in projects.
+
+Pausing stops main-viewport draws and suspends its repeated media/pattern texture updates when no native output needs them. Active NDI/Spout captures continue rendering their own frames. Scene resources remain allocated for quick resumption, so this reduces rendering work rather than releasing all GPU memory. A static viewport already renders on demand; the largest saving is with changing sources or test sequences.
+
+The Windows application opens a borderless window above other applications, without a bright outer outline. The top-left move handle, top-right close button and bottom-right resize handle remain visible. The localhost browser preview uses a floating panel inside the application page. Windows start at 640 × 360 and can be resized freely down to 240 × 160; the camera adapts to the window's aspect ratio without stretching models. Changing the window size does not change model dimensions or native stream resolution.
+
+**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Windowed output can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map or Patterns keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. You can switch Windowed output off from any workspace. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
 
 ## 11. Exporting
 
@@ -636,8 +815,10 @@ Desktop PNG exports are routed to `Documents\OpticMesh\Test Patterns` unless ano
 |---|---|
 | **GLB** | Single-file universal glTF delivery with embedded scene data. |
 | **glTF Package** | ZIP package containing glTF scene resources. |
-| **OBJ Package** | ZIP package for broad compatibility with traditional 3D software. |
+| **OBJ Package** | ZIP package with metre-based coordinates. Import at scale 1 with source units set to metres. |
 | **MVR 1.5** | Scene meshes for compatible entertainment-production workflows. |
+| **STL (v0.8.0)** | Binary world-positioned triangle geometry. No materials or hierarchy; coordinates are written in metres, so select metres when importing into unitless consumers. |
+| **USDZ (v0.8.0)** | Packaged scene geometry and supported appearance. Compatibility with receiving applications should be checked. |
 
 3D exports include:
 
@@ -649,6 +830,10 @@ Desktop PNG exports are routed to `Documents\OpticMesh\Test Patterns` unless ano
 - saved slice and hierarchy transforms.
 
 3D exports exclude the viewport floor, grid, camera, selection outlines, and transform gizmos.
+
+In v0.8.0, visible imported stage geometry is included alongside screens and can also be exported without a Resolume map. Display wireframe is an editor option; model geometry exports as a neutral shaded surface. OBJ includes its neutral material definition. Import availability does not imply export support for the same format: FBX, 3DS, DAE, standalone GDTF and separate USD/USDA/USDC export are not provided.
+
+**OBJ units:** one exported coordinate unit equals one metre, with Y as the up axis. OBJ has no standard physical-unit declaration, so select **metres** in the receiving application's import settings. The package README and OBJ comments identify this convention, but cannot configure the importer automatically. Choosing millimetres makes the geometry 1,000 times too small; choosing centimetres makes it 100 times too small. Changing only the receiving application's displayed unit does not correct an import-scale mismatch. Reimport using the correct source unit. This applies equally to LED screens and imported stage models, regardless of their original source units.
 
 ### 11.3 Export validation
 
@@ -671,25 +856,26 @@ Export may be blocked when a curved screen's extrusion depth is physically inval
 | `F3` | 3D Simulation | Switch to Right. |
 | `F4` | 3D Simulation | Switch to Front. |
 | `F5` | 3D Simulation | Switch to All Views (four-view layout). |
-| `S` | 3D Simulation | Focus selection in the active view. Does nothing with no selection. |
+| `S` | 3D Simulation | Over or focused in Scene Hierarchy: expand ancestors and reveal the selected row. Over the viewport: frame selection in the active view. Does nothing with no selection; text fields keep normal typing. |
 | `F` | 3D Simulation | Fit the entire visible scene in all views, regardless of selection. |
-| `Ctrl+A` | Focused 3D viewport | Select all scene slices. Click the viewport or Tab to it first. |
+| `Ctrl+A` | Focused 3D viewport | Select all imported model roots when a model is selected; otherwise select all scene slices. Click the viewport or Tab to it first. |
 | `E` | 3D Simulation | Activate Move. |
 | `R` | 3D Simulation | Activate Rotate. |
 | `T` | 3D Simulation | Activate Scale. |
-| `Ctrl+G` | 3D Simulation | Group selected ungrouped slices using the Group command. Disabled while typing or browsing menus/dialogs, with no selection, or when a group is selected. |
+| `Ctrl+G` | 3D Simulation | Group selected model parts within their import, or selected ungrouped slices. Disabled while typing or browsing menus/dialogs. |
+| `Delete` | 3D Simulation | Delete selected imported models/groups/parts only. Screens and Resolume slices are protected. Respects locks; inactive in fields and menus/dialogs. |
 | `Shift` while scaling | 3D viewport | Scale proportionally on all axes, preserving the initial proportions. |
 | `Shift` while rotating | 3D viewport | Snap interactive rotation to 5° increments. |
 | `Ctrl`-click | Pixel Map / hierarchy / 3D | Toggle an item in a multi-selection. |
 | `Shift`-click | Pixel Map / hierarchy / 3D | Add/remove slices, or select a hierarchy group range. |
-| `Ctrl`-drag | 3D viewport | Add visible screens inside a marquee to the selection. |
+| `Ctrl`-drag | 3D viewport | Add visible model items or screens inside a marquee, using the active selection type. |
 | `Space` + left-drag | 2D canvas | Pan the pattern or map. Does not activate while typing in an input. |
 | `Enter` | Numeric or group-name field | Commit the entered value or finish group renaming. |
 | `Escape` | Editable field | Cancel/revert supported field editing or finish group renaming without continuing the edit mode. |
 
 In browsers on macOS, use `Cmd` in place of `Ctrl`. The installed application is for Windows.
 
-The 3D letter shortcuts accept lowercase and uppercase. Letter and F1–F5 view shortcuts do not run while typing or editing a field, using a select control, or while a menu or dialog is open. Ctrl+A keeps normal text-selection behavior in fields and selects scene slices only when the viewport has keyboard focus. Selecting all does not unlock or reveal hidden slices; pivot and transform edits still respect locks.
+The 3D letter shortcuts accept lowercase and uppercase. Letter and F1–F5 view shortcuts do not run while typing or editing a field, using a select control, or while a menu or dialog is open. Ctrl+A keeps normal text-selection behavior in fields and selects scene content only when the viewport has keyboard focus. Selecting all does not unlock or reveal hidden items; pivot and transform edits still respect locks.
 
 **Tip:** with the 3D workspace active and no field, menu, or dialog open, press F to fit the entire visible scene. Use S to focus selected objects; in All Views, hover the pane you want to focus before pressing S. F reframes all panes and keeps your selection.
 
@@ -711,14 +897,29 @@ Press **F1** for Perspective, **F2** for Top, **F3** for Right, **F4** for Front
 
 Choose **All Views** in the 3D toolbar. The panes are Perspective (upper left), Top (upper right), Front (lower left), and Right (lower right).
 
-- Wheel zoom is anchored to the cursor inside the pane under the pointer. Each camera keeps its own pan and zoom.
+- Wheel zoom is anchored to the cursor inside the pane under the pointer. Each camera keeps its own pan and zoom. In Perspective, zoom distance follows the visible screen or model surface under the cursor, with finer movement close up. Navigation continues through empty space without stopping at an old orbit target. For detailed models, zoom distance uses object bounds to keep navigation responsive; the surface estimate may be less exact around openings or concave shapes. This does not change mesh detail or selection accuracy. Floor, grid and gizmos do not set the zoom distance.
 - Left-drag orbits Perspective. Left-drag pans the fixed-axis orthographic panes; right-drag pans any pane.
 - Select a screen and drag its Move, Rotate, or Scale gizmo in any pane. The same scene updates in all four views. Undo/redo applies to the shared edit.
 - Ctrl-drag marquee stays inside the pane where the drag began. Ctrl/Shift-click retains multi-selection behavior.
-- Switching between a single view and All Views preserves camera framing for this workspace session. **Fit Scene** reframes all cameras using current visible object bounds, including moved screens; **Focus** frames the selection in the last-used pane. S runs Focus. F always runs Fit Scene, regardless of selection.
+- Switching between a single view and All Views preserves camera framing for this workspace session. **Fit Scene** reframes all cameras using current visible object bounds, including moved screens; **Focus** above the viewport frames the selection in the last-used pane. S over the viewport runs this action; S over Scene Hierarchy reveals the selection in the list. F always runs Fit Scene, regardless of selection.
 - 3D output uses Perspective in All Views, or the displayed camera in a single view, without editor gizmos.
 
 ---
+
+### 12.4 Windowed output controls
+
+Windowed output is a camera-only preview in v0.8.0 Beta. Its controls are separate from the editor's object tools.
+
+| Control | Action |
+| --- | --- |
+| Top-left move-handle drag | Move the preview window |
+| Left-drag inside the preview | Orbit the preview camera |
+| Right-drag | Pan the preview camera |
+| Wheel | Zoom the preview camera towards the cursor |
+| Bottom-right drag | Resize the preview window |
+| Escape / top-right × | Close the preview |
+
+Object-selection, transform, grouping, delete, undo/redo, and project shortcuts do not run while the preview is focused. Continue scene editing in the main editor.
 
 ## 13. Numeric fields and mixed values
 

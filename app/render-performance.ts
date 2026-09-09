@@ -9,6 +9,8 @@ export class RenderPerformance {
   private gpu: { time: number; ms: number } | null = null;
   private gpuStatus: GpuStatus = "unsupported";
   private started = 0;
+  private sceneTriangles: number | null = null;
+  setSceneTriangles(value: number) { this.sceneTriangles = value; }
 
   reset(now = performance.now()) {
     this.frames = []; this.last = null; this.gpu = null;
@@ -36,6 +38,7 @@ export class RenderPerformance {
     const count = this.frames.length;
     const elapsed = Math.min(1000, Math.max(1, now - this.started));
     return {
+      sceneTriangles: this.sceneTriangles,
       fps: count * 1000 / elapsed,
       frames: count,
       cpuMs: count ? this.frames.reduce((sum, frame) => sum + frame.cpuMs, 0) / count : null,

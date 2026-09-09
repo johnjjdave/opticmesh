@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 // Build desktop/dist first. Exercise the real Electron main/preload and native senders,
 // with temporary Documents/userData and a unique sender name.
 import { createRequire } from 'node:module';
@@ -47,7 +48,7 @@ try {
     requestAnimationFrame(tick);
   });
   await page.getByRole('button', { name: '3D', exact: true }).click();
-  await page.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();
+  await page.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();await confirmProjectReplacement(page);
   const menu = page.getByRole('navigation').first();
   const output = menu.getByRole('button', { name: 'Output', exact: true });
   const viewport = page.getByRole('region', { name: '3D viewport', exact: true });

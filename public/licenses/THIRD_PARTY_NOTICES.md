@@ -6,6 +6,7 @@ LO2S - OpticMesh is distributed under the [MIT License](https://github.com/johnj
 | --- | --- |
 | React, React DOM, and Scheduler | MIT; copies in [public/licenses](https://github.com/johnjjdave/opticmesh/tree/main/public/licenses) |
 | Three.js | MIT; copy in [public/licenses](https://github.com/johnjjdave/opticmesh/tree/main/public/licenses) |
+| @xmldom/xmldom | MIT; [license copy](https://github.com/johnjjdave/opticmesh/blob/main/public/licenses/xmldom-MIT.txt) |
 | Geist and Geist Mono fonts | [SIL Open Font License 1.1](https://github.com/johnjjdave/opticmesh/blob/main/public/brand/OFL.txt) |
 | Spout2 / SpoutLibrary | [BSD 2-Clause](https://github.com/johnjjdave/opticmesh/blob/main/native/vendor/Spout2/LICENSE), copyright Lynn Jarvis |
 | Electron and Chromium | Their license files and Chromium third-party notices accompany the Windows application |
@@ -14,3 +15,11 @@ LO2S - OpticMesh is distributed under the [MIT License](https://github.com/johnj
 The Windows package includes OpticMesh and Spout license copies under `resources/licenses`. Renderer license copies and font notices are also included with the web assets.
 
 NDI® is a registered trademark of Vizrt NDI AB. NDI is not licensed under OpticMesh’s MIT License. See [ndi.video](https://ndi.video/) for the technology and vendor information.
+
+The Pixel Map navigation symbol is an outline adaptation of the Resolume Arena mark from the [official Resolume press assets](https://www.resolume.com/index.php/press), used to identify Resolume map support. The Resolume name and logo belong to their respective owner and are not covered by OpticMesh’s MIT License.
+
+The FBX importer includes a modified copy of Three.js 0.185.1 FBXLoader under the MIT License (copyright 2010–2026 three.js authors). Its local change preserves curved extruded polygon strips during triangulation. The source and original license are retained in app/vendor/FBXLoader.js and app/vendor/FBXLoader.LICENSE.txt; the distributed Three.js MIT license also applies to this component.
+
+## Reflection environments
+
+The three optimized HDRI reflection environments are derived from Greyscalegorilla Rio Bay Cloudy, Parking Lot Sunny and Ultimate Skies 4K 0014. They are bundled with redistribution permission supplied by the project publisher. Copyright remains with the respective rights holder; these assets are not covered by OpticMesh’s MIT License.

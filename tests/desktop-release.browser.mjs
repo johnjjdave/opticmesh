@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 // Run only on an isolated CI Windows runner after installing the candidate.
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
@@ -18,13 +19,14 @@ try {
     return image?.complete && image.naturalWidth > 0;
   });
   await page.waitForFunction(() => !!window.lo2sDesktop);
-  assert.equal(await app.evaluate(({ app }) => app.getVersion()), '0.7.0-beta');
+  const candidate = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(await app.evaluate(({ app }) => app.getVersion()), candidate.version);
   const documents = await app.evaluate(({ app }) => app.getPath('documents'));
   for (const folder of ['Projects', 'Exports', 'Test Patterns']) {
     assert((await fs.stat(path.join(documents, 'OpticMesh', folder))).isDirectory());
   }
   await page.getByRole('button', { name: '3D', exact: true }).click();
-  await page.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();
+  await page.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();await confirmProjectReplacement(page);
   const viewport = page.getByRole('region', { name: '3D viewport', exact: true });
   await viewport.focus();
   for (const [key, mode] of [['F2', 'top'], ['F3', 'right'], ['F4', 'front'], ['F5', 'four'], ['F1', 'perspective']]) {
@@ -33,8 +35,12 @@ try {
   }
   await page.getByRole('button', { name: 'Guide', exact: true }).click();
   const manual = page.getByRole('dialog');
-  assert((await manual.innerText()).includes('Compile Project'));
-  assert.equal(await manual.locator('a[href^="#manual-"]').count(), 17);
+  assert((await manual.innerText()).includes('Version 0.8.0'));
+  const sections = manual.getByRole('navigation', { name: 'Manual sections', exact: true });
+  assert((await sections.locator('a').count()) >= 18);
+  await sections.locator('a[href="#manual-5-projects-autosave-and-recovery"]').click();
+  await sections.locator('a[href="#manual-54-compile-project"]').click();
+  assert((await manual.getByRole('article').innerText()).includes('Compile Project'));
   await page.getByRole('button', { name: 'Close manual', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'Latest changes autosaved' }).waitFor({ timeout: 15000 });
   const startupPath = path.join(documents, 'OpticMesh', 'Projects', 'Startup Project.lo2s');

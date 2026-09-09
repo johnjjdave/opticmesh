@@ -17,7 +17,7 @@ test("server-renders the official 0.7 layout by default", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /v0\.7\.0/);
+  assert.match(html.replace(/<!--[\s\S]*?-->/g, ""), /v0\.8\.0/);
   assert.match(html, /Pattern elements/);
   assert.match(html, /Cabinet IDs/);
   assert.match(html, /Fit Canvas/);
@@ -238,7 +238,8 @@ test("keeps the desktop beta hotfix safeguards in source", async () => {
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(page, /LO2S - OpticMesh V\.\{DISPLAY_VERSION\}/);
-  assert.match(page, /<b>Beta<\/b>/);
+  assert.match(page, /const BUILD_BADGE = "Beta"/);
+  assert.match(page, /\{BUILD_BADGE\}/);
   assert.doesNotMatch(page, /Experimental WYSIWYG workspace/);
   assert.doesNotMatch(page, /<span>History<\/span>/);
   assert.match(page, /selectHierarchySlice/);
@@ -284,7 +285,7 @@ test("keeps the desktop beta hotfix safeguards in source", async () => {
   assert.match(desktop, /"Exports"/);
   assert.match(desktop, /"Test Patterns"/);
   assert.match(desktop, /Startup Project\.previous\.lo2s/);
-  assert.match(desktop, /SUPPORTED_PROJECT_SCHEMA = 3/);
+  assert.match(desktop, /SUPPORTED_PROJECT_SCHEMA = 4/);
   assert.match(desktop, /writableProjectPaths\.has\(targetPath\)/);
   assert.match(desktop, /candidate === locations\.previousStartupProject/);
   assert.match(page, /Restored latest working project/);
@@ -304,7 +305,7 @@ test("keeps the desktop beta hotfix safeguards in source", async () => {
   assert.match(page, /hierarchyGroupSelectionAnchorRef/);
   assert.match(page, /selectedGroupIds\.includes\(group\.id\)/);
   assert.match(geometry, /continuousRotation\(mesh\.quaternion, start\.continuousRotation\)/);
-  assert.match(page, /Double-click a group name to rename it/);
+  assert.doesNotMatch(page, /Double-click a group name to rename it/);
   assert.match(page, /dropHierarchyItem/);
   assert.match(page, /Move to scene root/);
   assert.match(page, /backgroundMode: "transparent"/);
