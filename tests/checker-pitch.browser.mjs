@@ -10,7 +10,7 @@ try {
   await page.goto(process.env.OPTICMESH_URL || 'http://localhost:3000/v070');
   await page.getByText('Manual save only', { exact: true }).waitFor();
   const button = name => page.getByRole('button', { name, exact: true });
-  const inspector = page.locator('aside').last();
+  const inspector = page.locator('aside[class*="inspector"]').last();
   const tab = name => inspector.locator(':scope > nav').getByRole('button', { name: new RegExp('^' + name + '$', 'i') });
   const field = name => page.getByRole('textbox', { name: new RegExp('^' + name + ',') });
   const edit = async (name, value) => { await field(name).fill(String(value)); await field(name).press('Enter'); };

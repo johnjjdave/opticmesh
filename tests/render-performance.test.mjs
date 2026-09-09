@@ -51,3 +51,11 @@ test('unsupported and timed-out GPU measurements stay unavailable without waitin
   assert.equal(state.deleted, 1); assert.equal(state.results, 0);
   assert.equal(metrics.snapshot().gpu, null);
 });
+
+test('scene topology total is independent of submitted frame triangles and timing resets', () => {
+ const metrics=new RenderPerformance();metrics.setSceneTriangles(5000);
+ metrics.record(1,{width:100,height:100,triangles:1200});assert.equal(metrics.snapshot().sceneTriangles,5000);
+ metrics.record(1,{width:100,height:100,triangles:24000});assert.equal(metrics.snapshot().sceneTriangles,5000);
+ metrics.reset();assert.equal(metrics.snapshot().sceneTriangles,5000);
+ metrics.setSceneTriangles(0);assert.equal(metrics.snapshot().sceneTriangles,0);
+});

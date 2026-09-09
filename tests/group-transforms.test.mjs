@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canParentGroup, groupDescendantSliceIds, groupTransformFromMovedChild, groupTransformFromWorldBounds, groupTransformFromWorldChildren, groupWorldTransform, localToWorldTransform, matrixTransform, migrateTransformGroup, moveTransformGroup, placeTransformGroup, transformMatrix, worldToLocalTransform } from "../app/group-transforms.ts";
+import { releaseSceneGroups, reanchorGroup, canParentGroup, groupDescendantSliceIds, groupTransformFromMovedChild, groupTransformFromWorldBounds, groupTransformFromWorldChildren, groupWorldTransform, localToWorldTransform, matrixTransform, migrateTransformGroup, moveTransformGroup, placeTransformGroup, transformMatrix, worldToLocalTransform } from "../app/group-transforms.ts";
 
 const close = (actual, expected, tolerance = 1e-8) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} should be close to ${expected}`);
 const closeTransform = (actual, expected) => {
@@ -92,4 +92,33 @@ test("group hierarchy reordering changes only the requested group order", () => 
   assert.equal(reordered[0], groups[1]);
   assert.deepEqual(moveTransformGroup(groups, "a", -1), groups);
   assert.deepEqual(moveTransformGroup(groups, "c", 1), groups);
+});
+
+test('reanchoring rotated scaled groups preserves direct and nested child geometry and reset state',()=>{
+ const groups=[migrateTransformGroup({id:'parent',name:'Parent',sliceIds:['screen'],transform:{position:[4,2,1],rotation:[.2,.4,.1],scale:[2,3,4]}}),migrateTransformGroup({id:'child',name:'Child',parentId:'parent',sliceIds:['nested'],transform:{position:[1,2,3],rotation:[.1,0,.2],scale:[1,1,1]}})];
+ const transforms={screen:{position:[2,3,4],rotation:[0,0,0],scale:[1,1,1]},nested:{position:[1,0,0],rotation:[0,0,0],scale:[1,1,1]}};
+ const world=(gs,ts,nested=false)=>transformMatrix(gs[0].transform).multiply(nested?transformMatrix(gs[1].transform):transformMatrix()).multiply(transformMatrix(ts[nested?'nested':'screen']));
+ const before=[world(groups,transforms),world(groups,transforms,true)];
+ const result=reanchorGroup(groups,transforms,'parent',[1,-2,3],'custom');
+ [world(result.groups,result.transforms),world(result.groups,result.transforms,true)].forEach((m,i)=>m.elements.forEach((v,j)=>close(v,before[i].elements[j])));
+ assert.deepEqual(groups[0].transform.position,[4,2,1]);assert.equal(result.groups[0].pivotMode,'custom');
+ assert.equal(migrateTransformGroup(JSON.parse(JSON.stringify(result.groups[0]))).pivotMode,'custom');
+});
+
+test('nested group pivot preserves rendered child placement under a non-uniform parent',()=>{
+ const groups=[migrateTransformGroup({id:'p',name:'Parent',sliceIds:[],transform:{position:[3,4,5],rotation:[.3,.7,.2],scale:[2,3,4]}}),migrateTransformGroup({id:'g',parentId:'p',name:'Group',sliceIds:['s'],transform:{position:[4,1,-2],rotation:[.4,.2,.6],scale:[1.2,2,1]}})];
+ const transforms={s:{position:[2,3,4],rotation:[.1,.2,.3],scale:[1,1,1]}};
+ const before=transformMatrix(groupWorldTransform('g',groups)).multiply(transformMatrix(transforms.s));
+ const result=reanchorGroup(groups,transforms,'g',[1,-2,3],'custom');
+ const after=transformMatrix(groupWorldTransform('g',result.groups)).multiply(transformMatrix(result.transforms.s));
+ before.elements.forEach((v,i)=>close(v,after.elements[i]));
+});
+
+test("removing nested scene containers releases every LED slice with its current world scale and pose",()=>{
+ const make=(id,parentId,sliceIds,position)=>({id,name:id,parentId,sliceIds,visible:true,locked:false,expanded:true,transform:{position,rotation:[0,.4,0],scale:[2,2,2]},initialTransform:{position,rotation:[0,0,0],scale:[1,1,1]}});
+ const groups=[make('outer',null,['a'],[2,3,4]),make('inner','outer',['b'],[1,2,3])],transforms={a:{position:[1,0,0],rotation:[0,0,0],scale:[1,1,1]},b:{position:[0,1,0],rotation:[0,0,0],scale:[1,1,1]}};
+ const world={a:localToWorldTransform(groupWorldTransform('outer',groups),transforms.a),b:localToWorldTransform(groupWorldTransform('inner',groups),transforms.b)};
+ const removed=releaseSceneGroups(groups,['outer'],transforms,world,true);assert.equal(removed.groups.length,0);assert.deepEqual(removed.returnedSliceIds,['a','b']);closeTransform(removed.transforms.a,world.a);closeTransform(removed.transforms.b,world.b);
+ const ungrouped=releaseSceneGroups(groups,['inner'],transforms,world);assert.equal(ungrouped.groups.length,1);assert.deepEqual(ungrouped.groups[0].sliceIds,['a'],'Released slices do not transfer to an outer scene group');closeTransform(ungrouped.transforms.b,world.b);
+ groups[1].locked=true;assert.throws(()=>releaseSceneGroups(groups,['outer'],transforms,world,true),/Unlock/);
 });

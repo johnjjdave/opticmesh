@@ -6,10 +6,15 @@ const { fileURLToPath } = require("node:url");
 const { promisify } = require("node:util");
 const { writeCompiledProject } = require("./compile-project.cjs");
 
+const { DesktopProjectEncoder } = require("./project-encoder.cjs");
+const { createSystemPerformance } = require("./system-performance.cjs");
+const readSystemPerformance = createSystemPerformance(() => app.getAppMetrics());
+
 const appRoot = __dirname;
 const MAX_XML_BYTES = 32 * 1024 * 1024;
-const MAX_PROJECT_BYTES = 128 * 1024 * 1024;
-const SUPPORTED_PROJECT_SCHEMA = 3;
+const projectLimits = require("./project-limits.json");
+const MAX_PROJECT_BYTES = projectLimits.projectMiB * 1024 * 1024;
+const SUPPORTED_PROJECT_SCHEMA = 4;
 const WORKSPACE_DIRECTORY_NAME = "OpticMesh";
 let linkedDirectory = null;
 let linkedWatcher = null;
@@ -49,7 +54,7 @@ async function ensureWorkspaceDirectories() {
 
 function projectBuffer(payload) {
   const data = Buffer.from(payload?.data || []);
-  if (!data.length || data.length > MAX_PROJECT_BYTES) throw new Error("The project data is empty or exceeds the 128 MB safety limit.");
+  if (!data.length || data.length > MAX_PROJECT_BYTES) throw new Error(`The project data is empty or exceeds the ${projectLimits.projectMiB} MiB safety limit.`);
   const parsed = JSON.parse(data.toString("utf8"));
   if (parsed?.format !== "opticmesh-project") throw new Error("The project data is not a LO2S - OpticMesh project.");
   if (Number(parsed.version || 1) > SUPPORTED_PROJECT_SCHEMA) throw new Error(`This project uses schema ${parsed.version}, but this version supports up to schema ${SUPPORTED_PROJECT_SCHEMA}.`);
@@ -368,6 +373,26 @@ async function startResolumeLink(window) {
   return initial;
 }
 
+const windowedOutputs = new Map();
+
+ipcMain.handle("windowed-output:gesture", (event, command) => {
+  // Only the owning editor renderer can move its own preview window.
+  const entry = windowedOutputs.get(event.sender.id);
+  if (!entry || entry.window.isDestroyed()) return;
+  if (command?.action === "ready") entry.window.setAlwaysOnTop(true, "screen-saver");
+  else if (command?.action === "begin-move" || command?.action === "begin-resize") {
+    entry.gesture = { action: command.action, bounds: entry.window.getBounds() };
+  } else if (command?.action === "end") entry.gesture = null;
+  else if (command?.action === "update" && entry.gesture && Number.isFinite(command.x) && Number.isFinite(command.y)) {
+    const dx = Math.round(Math.max(-20000, Math.min(20000, command.x)));
+    const dy = Math.round(Math.max(-20000, Math.min(20000, command.y)));
+    const bounds = entry.gesture.bounds;
+    entry.window.setBounds(entry.gesture.action === "begin-move"
+      ? { ...bounds, x: bounds.x + dx, y: bounds.y + dy }
+      : { ...bounds, width: Math.max(240, Math.min(7680, bounds.width + dx)), height: Math.max(160, Math.min(4320, bounds.height + dy)) });
+  }
+});
+
 function createWindow() {
   const window = new BrowserWindow({
     title: "LO2S - OpticMesh",
@@ -390,8 +415,48 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => window.show());
+  window.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    if (url === "about:blank" && frameName === "opticmesh-windowed-output") {
+      return { action: "allow", overrideBrowserWindowOptions: {
+        title: "OpticMesh — Windowed output", width: 640, height: 360, minWidth: 240, minHeight: 160,
+        frame: false, thickFrame: false, roundedCorners: false, resizable: false, maximizable: false, fullscreenable: false,
+        alwaysOnTop: true, autoHideMenuBar: true, backgroundColor: "#090b0c",
+        webPreferences: { preload: path.join(appRoot, "windowed-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+      } };
+    }
+    if (/^https:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  window.webContents.on("did-create-window", (preview, details) => {
+    if (details.frameName !== "opticmesh-windowed-output") return;
+    const ownerId = window.webContents.id;
+    windowedOutputs.get(ownerId)?.window.close();
+    const entry = { window: preview, gesture: null };
+    windowedOutputs.set(ownerId, entry);
+    // Reapply after initial navigation; about:blank portals also send "ready".
+    // Use the topmost Windows level so the output remains above other apps.
+    preview.webContents.once("did-finish-load", () => {
+      setImmediate(() => { if (!preview.isDestroyed()) preview.setAlwaysOnTop(true, "screen-saver"); });
+    });
+    preview.setResizable(false);
+    preview.setMaximizable(false);
+    preview.setMenu(null);
+    preview.webContents.on("will-navigate", (event) => event.preventDefault());
+    preview.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    const closePreview = () => { if (!preview.isDestroyed()) preview.close(); };
+    preview.on("closed", () => {
+      window.removeListener("closed", closePreview);
+      if (windowedOutputs.get(ownerId) === entry) windowedOutputs.delete(ownerId);
+    });
+    window.once("closed", closePreview);
+  });
   window.on("closed", () => { stopResolumeLink(); void stopNativeSource(); void stopNativeOutput(); });
-  window.loadFile(path.join(appRoot, "dist", "index.html"));
+  const localDevUrl = !app.isPackaged && process.env.OPTICMESH_DEV_URL;
+  if (localDevUrl) {
+    const parsed = new URL(localDevUrl);
+    if (parsed.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) throw new Error("Development preview must use localhost.");
+    window.loadURL(parsed.href);
+  } else window.loadFile(path.join(appRoot, "dist", "index.html"));
 }
 
 app.whenReady().then(async () => {
@@ -401,6 +466,7 @@ app.whenReady().then(async () => {
   catch (error) { console.error("Unable to prepare native source bridge:", error); }
   protocol.interceptFileProtocol("file", (request, callback) => callback({ path: resolveFileRequest(request.url) }));
 
+  ipcMain.handle("performance:snapshot", () => readSystemPerformance());
   ipcMain.handle("resolume:choose-xml", async () => {
     const result = await dialog.showOpenDialog({
       title: "Choose Resolume Advanced Output XML",
@@ -519,7 +585,8 @@ app.whenReady().then(async () => {
     const data = Buffer.from(payload?.data || []);
     const expected = width * height * 4;
     if (expected !== data.length || expected > 512 * 1024 * 1024) return { ok: false, error: "The output frame dimensions are invalid." };
-    nativeOutputLatest = { width, height, fpsN: 30, fpsD: 1, data };
+    const fpsN = Math.max(1, Math.min(30, Math.round(Number(payload?.fps) || 30)));
+    nativeOutputLatest = { width, height, fpsN, fpsD: 1, data };
     flushNativeOutput();
     return { ok: true };
   });
@@ -640,6 +707,27 @@ app.whenReady().then(async () => {
     } catch (error) {
       return { ok: false, error: error.message };
     }
+  });
+
+  // One cached snapshot per editor renderer; reloads begin with a reset patch.
+  const projectEncoders = new Map();
+  ipcMain.handle("project:autosave-delta", async (event, patch) => {
+    try {
+      let encoder = projectEncoders.get(event.sender.id);
+      if (!encoder) {
+        encoder = new DesktopProjectEncoder();
+        const id = event.sender.id;
+        projectEncoders.set(id, encoder);
+        event.sender.once("destroyed", () => { encoder.dispose(); projectEncoders.delete(id); });
+      }
+      const locations = await ensureWorkspaceDirectories();
+      // JSON encoding/validation runs in a worker. Its full buffer is transferred
+      // only to the main process, never copied through the renderer's bridge.
+      const data = await encoder.encode(patch);
+      if (event.sender.isDestroyed()) throw new Error("Project window closed.");
+      await atomicWriteProject(locations.startupProject, data, locations.previousStartupProject);
+      return { ok: true, path: locations.startupProject, savedAt: Date.now() };
+    } catch (error) { return { ok: false, error: error.message }; }
   });
 
   ipcMain.handle("project:autosave", async (_event, payload) => {

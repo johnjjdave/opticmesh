@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -12,7 +13,7 @@ try {
   await page.goto(process.env.OPTICMESH_URL || 'http://localhost:3000/v070');
   await page.getByText('Manual save only', { exact: true }).waitFor();
   const button = name => page.getByRole('button', { name, exact: true });
-  const inspector = page.locator('aside').last();
+  const inspector = page.locator('aside[class*="inspector"]').last();
   const tab = name => inspector.locator(':scope > nav').getByRole('button', { name: new RegExp('^' + name + '$', 'i') });
   const pitch = page.getByRole('textbox', { name: /^Pixel pitch,/ });
   const save = async () => {
@@ -30,7 +31,7 @@ try {
     assert.deepEqual(project.simulation.groups, []); assert.deepEqual(project.simulation.locks, {});
   };
   await pitch.fill('10'); await pitch.press('Enter');
-  await button('Pixel Map').click(); await button('Load Demo Map').click();
+  await button('Pixel Map').click(); await button('Load Demo Map').click();await confirmProjectReplacement(page);
   assert((await inspector.innerText()).includes('3940 × 2710 px'));
   assert((await inspector.innerText()).includes('7 slices · 2 screens'));
   const names = ['Header Ribbon', 'Center Wall', 'Center Wing - Stage Right', 'Center Wing - Stage Left', 'Stage Elevation', 'Band - Stage Right', 'Band - Stage Left'];
@@ -45,7 +46,7 @@ try {
   await page.locator('[class*="mapTree"]').getByRole('button', { name: /^Center Wall/ }).click();
   await tab('Geometry').click(); assert.equal(await pitch.inputValue(), '3.9');
   await pitch.fill('2'); await pitch.press('Enter');
-  await button('3D').click(); await button('Load Demo Scene').click();
+  await button('3D').click(); await button('Load Demo Scene').click();await confirmProjectReplacement(page);
   checkSource(await save());
   assert.equal(await page.locator('.hierarchy-row.child').count(), 7);
   await button('Select Center Wall').click(); await tab('Geometry').click();
@@ -57,7 +58,7 @@ try {
     await page.screenshot({ path: path.join(process.env.OPTICMESH_EVIDENCE_DIR, 'new-demo-all-views.png') });
     await button('Pixel Map').click(); await page.screenshot({ path: path.join(process.env.OPTICMESH_EVIDENCE_DIR, 'new-demo-pixel-map.png') });
   }
-  await button('File').click(); await button('Open Demo').click();
+  await button('File').click(); await button('Open Demo').click(); await confirmProjectReplacement(page);
   checkSource(await save()); assert.equal(await page.locator('.hierarchy-row.child').count(), 7);
   assert.deepEqual(errors, []);
   console.log('PASS: all three demo entry points; latest XML preserved; 3940×2710 input; two 3840×2160 outputs; 7 slices; 3.9 nominal pitch; clean demo state; 7×6 m center wall; All Views.');

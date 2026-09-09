@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -25,19 +26,19 @@ try {
   assert.equal(await value('Last GPU draw').innerText(), 'Not available for 2D');
   assert.match(await value('Render size').innerText(), /2,560 × 1,536 px/);
   await page.waitForTimeout(1600);
-  assert.equal(await value('Render FPS').innerText(), 'Idle');
-  await button('Pixel Map').click(); await button('Load Demo Map').click(); await button('Performance').click();
+  assert.equal(await value('Viewport redraws / s').innerText(), 'Idle');
+  await button('Pixel Map').click(); await button('Load Demo Map').click();await confirmProjectReplacement(page); await button('Performance').click();
   await page.waitForTimeout(600);
   assert.match(await value('Render size').innerText(), /3,940 × 2,710 px/);
   await button('3D').click(); await button('Performance').click();
   await page.waitForTimeout(1200);
   assert(Number.parseInt(await value('Draw calls').innerText().then(t => t.replaceAll(',', ''))) > 0);
-  assert(Number.parseInt(await value('Triangles').innerText().then(t => t.replaceAll(',', ''))) > 0);
+  assert(Number.parseInt(await value('Drawn triangles').innerText().then(t => t.replaceAll(',', ''))) > 0);
   const oneViewCalls = Number((await value('Draw calls').innerText()).replaceAll(',', ''));
   const viewport = page.getByRole('region', { name: '3D viewport', exact: true });
   const box = await viewport.boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, i % 2 ? 30 : -30); await page.waitForTimeout(90); }
-  assert(Number.parseFloat(await value('Render FPS').innerText()) > 0, 'FPS measures actual interaction redraws');
+  assert(Number.parseFloat(await value('Viewport redraws / s').innerText()) > 0, 'FPS measures actual interaction redraws');
   assert.match(await value('CPU render · avg').innerText(), /^\d+\.\d+ ms$/);
   await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('four');
   await page.waitForTimeout(1600);
@@ -46,7 +47,7 @@ try {
   const before = await page.evaluate(() => window.viewportDraws);
   await page.waitForTimeout(1600);
   assert.equal(await page.evaluate(() => window.viewportDraws), before, 'monitor updates do not redraw the scene');
-  assert.equal(await value('Render FPS').innerText(), 'Idle');
+  assert.equal(await value('Viewport redraws / s').innerText(), 'Idle');
   const gpuText = await value('Last GPU draw').innerText();
   assert(/^(\d+\.\d+ ms|Not supported|Waiting for sample|Sample invalidated)$/.test(gpuText), gpuText);
   if (process.env.OPTICMESH_EVIDENCE_DIR) {
@@ -70,7 +71,7 @@ try {
   await fallback.goto(process.env.OPTICMESH_URL || 'http://localhost:3000/v070');
   await fallback.getByText('Manual save only', { exact: true }).waitFor();
   await fallback.getByRole('button', { name: '3D', exact: true }).click();
-  await fallback.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();
+  await fallback.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();await confirmProjectReplacement(fallback);
   await fallback.getByRole('button', { name: 'Performance', exact: true }).click();
   await fallback.getByText('Not supported', { exact: true }).waitFor();
   assert.deepEqual(errors, []);

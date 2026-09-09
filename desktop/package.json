@@ -1,6 +1,6 @@
 {
   "name": "opticmesh-desktop",
-  "version": "0.7.0-beta",
+  "version": "0.8.0-beta",
   "packageManager": "pnpm@11.19.0",
   "private": true,
   "description": "LO2S - OpticMesh LED test-pattern, Resolume pixel-map, and 3D simulation workspace.",
@@ -51,7 +51,12 @@
       "native/**/*",
       "electron-main.cjs",
       "compile-project.cjs",
+      "project-limits.json",
+      "project-encoder.cjs",
+      "project-encode-worker.cjs",
+      "system-performance.cjs",
       "preload.cjs",
+      "windowed-preload.cjs",
       "package.json"
     ],
     "win": {

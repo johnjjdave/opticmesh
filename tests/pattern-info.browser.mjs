@@ -14,7 +14,7 @@ try {
   await page.goto(process.env.OPTICMESH_URL || 'http://localhost:3000/v070');
   await page.getByText('Manual save only', { exact: true }).waitFor();
   const button = name => page.getByRole('button', { name, exact: true });
-  const inspectorTab = name => page.locator('aside').last().locator(':scope > nav').getByRole('button', { name: new RegExp('^' + name + '$', 'i') });
+  const inspectorTab = name => page.locator('aside[class*="inspector"]').last().locator(':scope > nav').getByRole('button', { name: new RegExp('^' + name + '$', 'i') });
   const dot = page.getByRole('spinbutton', { name: 'Dot size', exact: true });
   const checkDot = async sliderName => {
     const slider = page.getByRole('slider', { name: sliderName, exact: true });

@@ -1,3 +1,4 @@
+import { confirmProjectReplacement } from "./browser-fixture.mjs";
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -8,7 +9,7 @@ try {
   await page.goto(process.env.OPTICMESH_URL || 'http://localhost:3000/v070');
   await page.getByText('Manual save only', { exact: true }).waitFor();
   const button = name => page.getByRole('button', { name, exact: true });
-  await button('3D').click(); await button('Load Demo Scene').click();
+  await button('3D').click(); await button('Load Demo Scene').click();await confirmProjectReplacement(page);
   const view = page.getByRole('region', { name: '3D viewport', exact: true });
   const scaleFields = page.locator('[class*="transformFields"] .transform-grid').nth(2).locator('input');
   const scales = () => scaleFields.evaluateAll(inputs => inputs.map(input => Number(input.value)));
@@ -58,12 +59,13 @@ try {
   await page.mouse.up(); await page.waitForTimeout(100);
   result = await scales(); assert(result[0] > 2.1); near(result[1], 3); near(result[2], 4);
 
-  await button('Load Demo Scene').click(); await view.focus(); await page.keyboard.press('Control+a');
+  await button('Load Demo Scene').click();await confirmProjectReplacement(page); await view.focus(); await page.keyboard.press('Control+a');
   const groups = page.locator('.hierarchy-row.group');
   await page.getByRole('textbox', { name: 'Search tools', exact: true }).focus();
   await page.keyboard.press('Control+g'); assert.equal(await groups.count(), 0);
   await view.focus(); await page.keyboard.press('Control+g'); assert.equal(await groups.count(), 1);
-  await page.keyboard.press('Control+g'); assert.equal(await groups.count(), 1, 'Repeated grouping does not nest unexpectedly');
+  await page.keyboard.press('Control+g'); assert.equal(await groups.count(), 2, 'Grouping a selected group creates an editable parent');
+  await page.keyboard.press('Control+z'); assert.equal(await groups.count(), 1);
   await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('front');
   await view.focus(); await page.keyboard.press('t'); await page.keyboard.press('s');
   await page.getByRole('combobox', { name: 'Camera view', exact: true }).selectOption('four');
@@ -72,15 +74,12 @@ try {
   await page.keyboard.press('Control+z'); result = await scales(); result.forEach(value => near(value, 1));
   await page.keyboard.press('Control+z'); assert.equal(await groups.count(), 0);
   await view.focus(); await page.keyboard.press('Control+a');
-  const inspector = page.locator('aside').last();
-  await inspector.locator(':scope > nav').getByRole('button', { name: /^geometry$/i }).click();
-  await button('Align').click();
-  assert(await page.locator('#scene-align').evaluate(el => el.contains(document.activeElement)));
-  assert(await page.locator('#scene-align').evaluate(el => { const r = el.getBoundingClientRect(), p = el.parentElement.getBoundingClientRect(); return r.top >= p.top && r.bottom <= p.bottom; }));
+  const inspector = page.locator('aside[class*="inspector"]').last();
+  await inspector.locator(':scope > nav').getByRole('button', { name: /^scene$/i }).click();
+  assert.equal(await button('Align').count(), 0);
+  assert.equal(await button('Distribute').count(), 0);
   await button('Align X').click();
-  await button('Distribute').click();
-  assert(await page.locator('#scene-distribute').evaluate(el => el.contains(document.activeElement)));
   await button('Space Y').click();
   assert.deepEqual(errors, []);
-  console.log('PASS: axis scale, proportional Shift scale from nonuniform values, modifier changes mid-drag, undo, guarded Ctrl+G, and Align/Distribute navigation.');
+  console.log('PASS: axis scale, proportional Shift scale from nonuniform values, modifier changes mid-drag, undo, guarded Ctrl+G, nested groups, and inspector alignment controls.');
 } finally { await browser.close(); }

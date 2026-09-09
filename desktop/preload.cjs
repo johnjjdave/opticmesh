@@ -87,6 +87,8 @@ function startSharedFrames(status) {
 }
 
 contextBridge.exposeInMainWorld("lo2sDesktop", {
+  getSystemPerformance: () => ipcRenderer.invoke("performance:snapshot"),
+  windowedOutputGesture: (command) => ipcRenderer.invoke("windowed-output:gesture", command),
   chooseResolumeXml: () => ipcRenderer.invoke("resolume:choose-xml"),
   linkLatestResolumeMap: () => ipcRenderer.invoke("resolume:link-latest"),
   unlinkResolumeMap: () => ipcRenderer.invoke("resolume:unlink"),
@@ -96,13 +98,14 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
   compileProject: (payload) => ipcRenderer.invoke("project:compile", payload),
   overwriteProject: (projectPath, data) => ipcRenderer.invoke("project:overwrite", { path: projectPath, data }),
   openProject: () => ipcRenderer.invoke("project:open"),
+  autosaveProjectDelta: (patch) => ipcRenderer.invoke("project:autosave-delta", patch),
   autosaveProject: (data) => ipcRenderer.invoke("project:autosave", { data }),
   autosaveProjectSync: (data) => ipcRenderer.sendSync("project:autosave-sync", { data }),
   loadStartupProject: () => ipcRenderer.invoke("project:load-startup"),
   getWorkspacePaths: () => ipcRenderer.invoke("workspace:paths"),
   revealProjectsFolder: () => ipcRenderer.invoke("workspace:reveal-projects"),
   startPatternOutput: (kind, name) => ipcRenderer.invoke("output:start", { kind, name }),
-  sendPatternOutputFrame: (width, height, data) => ipcRenderer.invoke("output:frame", { width, height, data }),
+  sendPatternOutputFrame: (width, height, data, fps) => ipcRenderer.invoke("output:frame", { width, height, data, fps }),
   stopPatternOutput: () => ipcRenderer.invoke("output:stop"),
   listNativeSources: (kind) => ipcRenderer.invoke("source:list", kind),
   connectNativeSource: (kind, sourceId, quality) => { stopSharedFrames(); return ipcRenderer.invoke("source:connect", { kind, sourceId, quality }); },

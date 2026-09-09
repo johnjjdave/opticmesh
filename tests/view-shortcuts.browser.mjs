@@ -69,6 +69,8 @@ try {
   await page.getByRole('button', { name: 'Help', exact: true }).click(); await guardedKeys();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Guide', exact: true }).click(); await guardedKeys();
+  await page.locator('.manual-sidebar a[href="#manual-12-keyboard-and-mouse-reference"]').click();
+  await page.locator('.manual-sidebar a[href="#manual-121-current-keyboard-shortcuts"]').click();
   const guide = await page.getByRole('dialog').innerText();
   for (const key of ['F1', 'F2', 'F3', 'F4', 'F5']) assert(guide.includes(key));
   assert(!/Cinema|VIOSO/i.test(guide));

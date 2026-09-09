@@ -1,5 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const projectLimits = require("./project-limits.json");
 
 function validateName(name) {
   if (!name || name.length > 120 || /[<>:"/\\|?*\x00-\x1f]/.test(name) || /[. ]$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) || name === "." || name === "..") throw new Error("Choose a valid project folder name (up to 120 characters).");
@@ -8,9 +9,9 @@ function validateName(name) {
 
 async function writeCompiledProject(folder, payload) {
   const target = path.resolve(folder), name = validateName(path.basename(target));
-  if (typeof payload?.project !== "string" || Buffer.byteLength(payload.project, "utf8") > 128 * 1024 * 1024) throw new Error("Invalid or oversized project data.");
+  if (typeof payload?.project !== "string" || Buffer.byteLength(payload.project, "utf8") > projectLimits.projectMiB * 1024 * 1024) throw new Error("Invalid or oversized project data.");
   const project = JSON.parse(payload.project);
-  if (project.format !== "opticmesh-project" || !project.rawXml || Number(project.version) > 3) throw new Error("A supported project with a Resolume XML is required.");
+  if (project.format !== "opticmesh-project" || !project.rawXml || Number(project.version) > 4) throw new Error("A supported project with a Resolume XML is required.");
   const maps = payload.files;
   if (!Array.isArray(maps) || !maps.length || maps.length > 1000) throw new Error("No maps available to compile.");
   const names = new Set();

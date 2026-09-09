@@ -14,11 +14,6 @@ body,
 
 body {
   overflow-x: hidden;
-  user-select: none;
-}
-
-input {
-  user-select: text;
 }
 
 @media (display-mode: fullscreen) {
