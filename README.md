@@ -10,9 +10,7 @@ OpticMesh is a free, open-source companion for visual artists, LED technicians a
 
 **New preview: v0.8.0 Beta · Windows x64**
 
-**Stable release: v0.7.0 · Web app and Windows**
-
-[Download v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0) · [Download stable](https://github.com/johnjjdave/opticmesh/releases/tag/v0.7.0) · [Open the stable web app](https://opticmesh.lo2s.com/) · [User manual](MANUAL.md) · [Changelog](CHANGELOG.md)
+[Download v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0) · [User manual](MANUAL.md) · [Changelog](CHANGELOG.md)
 
 ![OpticMesh 3D workspace with LED screens](public/manual/3d-overview.png)
 
