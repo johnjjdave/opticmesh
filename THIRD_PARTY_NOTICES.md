@@ -22,4 +22,4 @@ The FBX importer includes a modified copy of Three.js 0.185.1 FBXLoader under th
 
 ## Reflection environments
 
-The three optimized HDRI reflection environments are derived from Greyscalegorilla Rio Bay Cloudy, Parking Lot Sunny and Ultimate Skies 4K 0014. They are bundled with redistribution permission supplied by the project publisher. Copyright remains with the respective rights holder; these assets are not covered by OpticMesh’s MIT License.
+The three optimized HDRI reflection environments are derived from Greyscalegorilla Rio Bay Cloudy, Parking Lot Sunny and Ultimate Skies 4K 0014. Copyright remains with the respective rights holder; these assets are not covered by OpticMesh’s MIT License.
