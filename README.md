@@ -57,7 +57,7 @@ The Windows app maintains startup and recovery saves. It asks before replacing y
 
 ## Getting started
 
-1. Install the [v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0), or choose [v0.7.0 stable](https://github.com/johnjjdave/opticmesh/releases/tag/v0.7.0).
+1. Install the [v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0)
 2. Create a pattern or import a Resolume Advanced Output XML file in **Pixel Map**.
 3. Set your LED product's pixel pitch and check its physical dimensions.
 4. Switch to **3D**, import stage geometry if needed, and position your screens.
