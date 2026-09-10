@@ -13,11 +13,12 @@ async function render(pathname = "/") {
   );
 }
 
-test("server-renders the official 0.7 layout by default", async () => {
+test("server-renders the current application layout by default", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html.replace(/<!--[\s\S]*?-->/g, ""), /v0\.8\.0/);
+  const { version } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.ok(html.replace(/<!--[\s\S]*?-->/g, "").includes(`v${version.replace(/-beta$/, "")}`));
   assert.match(html, /Pattern elements/);
   assert.match(html, /Cabinet IDs/);
   assert.match(html, /Fit Canvas/);
@@ -168,7 +169,11 @@ test("keeps pixel-map and arithmetic features in the product source", async () =
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(page, /function evaluateExpression/);
+  const { evaluateExpression } = await import('../app/expression.ts');
+  assert.equal(evaluateExpression('(180 + 20) / 2'), 100);
+  assert.equal(evaluateExpression('-10 + 2', true), -8);
+  assert.equal(evaluateExpression('1 / 0'), null);
+  assert.match(page, /import.*evaluateExpression.*from ["']\.\/expression["']/);
   assert.match(page, /evaluateExpression\(draft, min <= 0\)/);
   assert.match(page, /function parseResolumeXml/);
   assert.match(page, /function automaticSliceColors/);

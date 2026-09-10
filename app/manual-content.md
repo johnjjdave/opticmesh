@@ -1,8 +1,8 @@
 # LO2S - OpticMesh Software Manual
 
-**Manual version:** 0.8.0
+**Manual version:** 0.9.0
 
-LO2S - OpticMesh is an LED test-pattern, Resolume pixel-map, and physically scaled 3D simulation application designed by LO2S. Use this manual to learn the workspaces, controls, shortcuts, and export workflows. Open it offline through **Help → OpticMesh Manual** or **Guide**; use **Help → Keyboard Shortcuts** for the control reference.
+LO2S - OpticMesh is an LED test-pattern, Resolume pixel-map, physically scaled 3D simulation, and technical-plot application designed by LO2S. Use this manual to learn the workspaces, controls, shortcuts, and export workflows. Open it offline through **Help → OpticMesh Manual** or **Guide**; use **Help → Keyboard Shortcuts** for the control reference.
 
 ## Contents
 
@@ -16,29 +16,33 @@ In the in-app Manual, choose a section in the left navigation to open its topic 
 6. [Test Patterns workspace](#6-test-patterns-workspace)
 7. [Resolume Pixel Map workspace](#7-resolume-pixel-map-workspace)
 8. [3D Simulation workspace](#8-3d-simulation-workspace)
-9. [Scene hierarchy and grouping](#9-scene-hierarchy-and-grouping)
-10. [Live sources and routing](#10-live-sources-and-routing)
-11. [Exporting](#11-exporting)
-12. [Keyboard and mouse reference](#12-keyboard-and-mouse-reference)
-13. [Numeric fields and mixed values](#13-numeric-fields-and-mixed-values)
-14. [Production workflow recommendations](#14-production-workflow-recommendations)
-15. [Troubleshooting](#15-troubleshooting)
-16. [Projection formats and current limitations](#16-projection-formats-and-current-limitations)
-17. [Terminology](#17-terminology)
+9. [Technical Plots](#9-technical-plots)
+10. [Scene hierarchy and grouping](#10-scene-hierarchy-and-grouping)
+11. [Live sources and routing](#11-live-sources-and-routing)
+12. [Exporting](#12-exporting)
+13. [Keyboard and mouse reference](#13-keyboard-and-mouse-reference)
+14. [Numeric fields and mixed values](#14-numeric-fields-and-mixed-values)
+15. [Production workflow recommendations](#15-production-workflow-recommendations)
+16. [Troubleshooting](#16-troubleshooting)
+17. [Projection formats and current limitations](#17-projection-formats-and-current-limitations)
+18. [Terminology](#18-terminology)
 
-[Floating Preview controls](#105-floating-preview)
+[Floating Preview controls](#115-floating-preview)
 
-[Importing stage models](#stage-model-import-v080)
+[Importing stage models](#stage-model-import)
 
 ---
 
 ## 1. What LO2S - OpticMesh does
 
-LO2S - OpticMesh combines three connected workflows:
+LO2S - OpticMesh combines four connected workflows:
 
 - **Test Patterns** creates pixel-accurate LED calibration and identification images.
 - **Resolume Pixel Map** reads Resolume Advanced Output XML, visualizes input and output mappings, applies physical LED information, validates slices, and exports maps.
 - **3D Simulation** turns the imported slices into physically sized LED screens that can be arranged, curved, grouped, textured, and exported as a 3D scene.
+- **Technical Plots** prepares printable pixel-mapping sheets with screen specifications, scene views and your own title block.
+
+The main production workflow is **Resolume Pixel Map → 3D Simulation → Technical Plots**. Patterns is a supporting mode for calibration and content checks. Confirm the real screen dimensions and 3D arrangement before preparing the plots.
 
 The intended production flow is:
 
@@ -49,11 +53,13 @@ Set the real LED pixel pitch and cabinet geometry
             ↓
 Verify input/output maps and XML diagnostics
             ↓
-Build the physical 3D arrangement
+Build and verify the physical 3D arrangement
+            ↓
+Create Technical Plots from the verified mapping and scene
             ↓
 Save one self-contained .lo2s project
             ↓
-Export test patterns, maps, or a 3D scene
+Export the plots as PDF or print; export maps or a 3D scene as needed
 ```
 
 ### 1.1 What the application stores locally
@@ -70,7 +76,7 @@ Documents\OpticMesh\
 ```
 
 - **Projects** contains named projects and managed recovery files.
-- **Exports** is the default destination for 3D scene exports.
+- **Exports** is the default destination for 3D scene exports and Technical Plots PDFs.
 - **Test Patterns** is the default destination for exported PNG maps and patterns.
 
 Project content and source frames are processed locally. LO2S - OpticMesh does not require uploading project files to an LO2S server.
@@ -97,7 +103,7 @@ At first launch, the app creates the `Documents\OpticMesh` workspace and starts 
 
 The Windows loading window stays visible while your project and its opening view are prepared. Larger stages may take longer to open. If startup fails, use **Retry** or close the loading window.
 
-Use **Open demo project** to learn the interface without preparing a Resolume file.
+Use **File → Open Demo** to learn the interface without preparing a Resolume file.
 
 ---
 
@@ -105,28 +111,29 @@ Use **Open demo project** to learn the interface without preparing a Resolume fi
 
 ### 3.1 Workspaces
 
-Use the left mode rail to switch between three workspaces:
+Use the left mode rail to switch between four workspaces:
 
 | Workspace | Purpose |
 |---|---|
 | **Patterns** | Design standalone LED calibration patterns from physical and raster specifications. |
 | **Pixel Map** | Import and inspect Resolume Advanced Output maps, edit slice presentation, validate XML, and export maps. |
 | **3D** | Arrange the mapped slices as physical LED screens in a 3D scene. |
+| **Plots** | Create technical sheets from the verified pixel map and 3D arrangement. |
 
-Changing workspace does not create a new project. All three workspaces belong to the same `.lo2s` project.
+Changing workspace does not create a new project. All four workspaces belong to the same `.lo2s` project.
 
 ### 3.2 Main interface regions
 
 - **Top bar:** File, Export, Output, Tools, Help, About, and Undo/Redo.
 - **Project bar:** project name, save status, notifications, and Studio/Focused layout controls.
-- **Left mode rail:** Patterns, Pixel Map (outlined Resolume symbol), 3D, and Guide.
+- **Left mode rail:** Patterns, Pixel Map (outlined Resolume symbol), 3D, Plots, and Guide.
 - **Tools panel:** searchable tools for the active workspace. Focused mode hides this panel to give the viewport more room.
 - **Tools menu:** the workspace Tools item toggles between Studio and Focused mode. Its background is highlighted while the tools panel is visible; select it again to hide or restore the panel.
-- **Central viewport and toolbar:** the pattern, map, or 3D scene with its editing and viewing controls.
+- **Central viewport and toolbar:** the pattern, map, 3D scene, or plot sheet with its editing and viewing controls.
 - **Right inspector:** settings and selection details for the active workspace.
-- **Bottom diagnostics:** validation, map changes where available, output status, and performance measurements.
+- **Bottom area:** Patterns, Pixel Map and 3D show diagnostics such as validation, output and performance. Plots shows the printed sheet count and paper size.
 
-Patterns inspector tabs are **Setup**, **Overlays**, and **Logo**; Pixel Map uses **Source**, **Geometry**, **Info**, and **Style**; 3D uses **Scene**, **Geometry**, and **Source**. Export commands are in the top **Export** menu. Patterns background and Run test sequence are in **Setup → Pattern presentation**.
+Patterns inspector tabs are **Setup**, **Overlays**, and **Logo**; Pixel Map uses **Source**, **Geometry**, **Info**, and **Style**; 3D uses **Scene**, **Geometry**, and **Source**. Plots has sheet and frame properties, including camera view, text and layout settings. Its left panel contains sheets, templates and the project title block. Export commands are in the top **Export** menu. Patterns background and Run test sequence are in **Setup → Pattern presentation**.
 
 Interface labels and buttons do not select text when dragged across. Text fields still support selection, copying and editing, including names, searches and coordinate expressions. Scene-object selection and hierarchy range selection work normally.
 
@@ -138,7 +145,7 @@ Notifications appear in a dedicated space in the project bar above the viewport 
 
 ## 4. Quick-start workflows
 
-### 4.1 Fastest route from Resolume to 3D
+### 4.1 From Resolume Pixel Map to 3D and Technical Plots
 
 1. Finish the slice layout in Resolume Advanced Output.
 2. Save/export the Advanced Output preset as XML.
@@ -148,8 +155,10 @@ Notifications appear in a dedicated space in the project bar above the viewport 
 6. Confirm slice dimensions and XML validation.
 7. Open **3D**.
 8. Arrange the screens, add curvature or extrusion, and create groups as needed.
-9. Press `Ctrl+S` to save the project.
-10. Export the scene as GLB, glTF, OBJ, or MVR.
+9. Verify physical sizes, positions and orientation in the 3D scene.
+10. Open **Plots**, choose a template, and prepare the maps, specifications and scene views.
+11. Review the sheets, then press `Ctrl+S` to save the project.
+12. Export the plots as PDF or print them. Export a separate 3D scene if required.
 
 ### 4.2 Create and export a standalone test pattern
 
@@ -165,7 +174,7 @@ New projects start with a **10 × 6 m** example wall at **3.9 mm** pixel pitch. 
 
 ### Save status
 
-The project bar reports the save state: **Manual save only** in the browser, or unsaved/saving/autosaved states when desktop autosave is available. An autosave failure stays visible in the strip with an error indicator until another save changes the state. Hover over a shortened status to read the full message. A manual-save indicator does not mean the current work has been saved.
+The project bar reports whether your work is unsaved, saving or autosaved. **Manual save only** means you need to save explicitly. An autosave failure stays visible in the strip with an error indicator until another save changes the state. Hover over a shortened status to read the full message. A manual-save indicator does not mean the current work has been saved.
 
 ### 4.3 Continue the latest job
 
@@ -185,10 +194,12 @@ A `.lo2s` file is self-contained. It stores:
 - per-slice overrides;
 - 3D transforms, pivots, extrusion, and curvature;
 - hierarchy groups, subgroups, order, visibility, locks, and collapse state;
-- source routing and quality settings (v0.8.0 starts with Pattern Generator on load; see section 10.1);
-- camera and viewport state.
+- source quality settings; live feeds need reconnecting after opening a project (see [Global sources](#111-global-sources));
+- imported 3D models and their OpticMesh material settings;
+- camera and viewport state;
+- Technical Plots sheets, frames, text formatting, selected views and title-block details.
 
-Do not edit a `.lo2s` file manually unless you are diagnosing a damaged project and have made a backup.
+Keep a named project file with each delivery revision. Use OpticMesh to open and edit it; a PDF is a finished document and cannot restore your editable scene or plot layout.
 
 ### 5.2 Startup Project versus named project
 
@@ -196,9 +207,9 @@ LO2S - OpticMesh distinguishes two concepts:
 
 | Project state | `Ctrl+S` behaviour |
 |---|---|
-| Managed **Startup Project** | Opens **Save project as…** so you can create a named project. |
-| Named project opened with **Load project…** | Atomically overwrites that exact named file. |
-| Named project created with **Save project as…** | Atomically overwrites that exact named file. |
+| Managed **Startup Project** | Opens **Save As…** so you can create a named project. |
+| Named project opened with **Open Project…** | Saves your changes to that named file. |
+| Named project created with **Save As…** | Saves your changes to that named file. |
 
 Background autosave always writes to the managed startup/recovery files. It never silently overwrites a named project. A named project is overwritten only by an explicit save command.
 
@@ -212,28 +223,30 @@ Save prompts open without selecting a button. Use Tab, Shift+Tab or the arrow ke
 - **Save project as…:** creates a named `.lo2s` file and makes it active for the session.
 - **Open Project…:** opens an existing `.lo2s` project and makes that path active.
 - **Open Recent:** shows the six most recently opened or saved projects in a submenu. The list is retained when you restart OpticMesh. Hover over a project name to see its full location. If a file has moved or been deleted, use Open Project to locate it again.
-- **New blank project:** resets the working state after applying a clean project model.
-- **Open demo project:** loads a sample scene for exploring the mapping and 3D tools.
+- **New Project:** starts a fresh project after the save confirmation.
+- **Open Demo:** loads a sample project for exploring Pixel Map, 3D and Technical Plots.
 - **Reveal Projects folder:** opens `Documents\OpticMesh\Projects`.
 
-**File → Open Demo** opens the sample project in 3D. Switch to Pixel Map to explore its mapping tools. Loading the demo replaces the current working state and disconnects any linked XML file.
+**File → Open Demo** opens the sample project in 3D. Switch to Pixel Map to inspect its mapping, then Plots to explore the delivery sheets. Loading the demo replaces the current working state and disconnects any linked XML file.
 
 **Before replacing a project:** New Project and Open Demo open a centred confirmation with **Cancel**, **Continue without saving**, and **Save and continue**. Open Project and Open Recent also show this confirmation when the current project has unsaved changes. Cancel or Escape keeps the current project. No action is selected when the prompt opens. Tab, Shift+Tab and the arrow keys move between available actions; Enter or Space activates the focused button. Save and continue saves to the active named project, or opens Save As when a named destination is needed; replacement happens only after a successful save. A cancelled or failed save leaves the project and confirmation open. Controls are temporarily disabled while saving.
 
-The confirmation also appears after autosave: startup recovery follows the current working project and is not a permanent named backup. Project replacement clears the scene Undo history, so Ctrl+Z cannot restore the preceding project after choosing to continue. In browsers that can only download files, verify the downloaded `.lo2s` file before explicitly choosing Continue without saving; requesting a download does not automatically replace the project.
+The confirmation also appears after autosave: startup recovery follows the current working project and is not a permanent named backup. Project replacement clears the scene Undo history, so Ctrl+Z cannot restore the preceding project after choosing to continue.
 
 ### 5.4 Compile Project
 
-Choose **File → Compile Project…** with a Resolume XML loaded. In Windows, enter the project name in the Save dialog's **File name** field and choose its parent location. OpticMesh creates a new folder using that name. In a browser with folder access, enter the name when prompted, then choose the parent folder.
+Choose **File → Compile Project…** with a Resolume XML loaded. Enter the project name in the Save dialog's **File name** field and choose its parent location. OpticMesh creates a new folder using that name.
 
 The folder contains:
 
-- **Your Project.lo2s** — the current settings and 3D scene, with the compiled project title.
+- **Your Project.lo2s** — the current project, including imported 3D models, scene settings and editable Technical Plots layouts, with the compiled project title.
 - **Your Project.xml** — the imported Resolume XML, including its original coordinates and spacing.
 - **Input Map.png** — the full composition raster without selection decorations.
 - **Output 001 - screen-name.png**, etc. — every screen's full-resolution output map. Numeric prefixes keep names unique.
 
-Compilation preserves the current working project's name, active save path and selection. Existing destination folders are rejected; use a new name. Canceling does not create a folder. The bundled XML represents the imported map; 3D edits are saved in the `.lo2s` file and do not rewrite Resolume coordinates. Live video/NDI/Spout feeds are not copied into this bundle. Browsers without folder access must use the Windows app.
+Compilation preserves the current working project's name, active save path and selection. Existing destination folders are rejected; use a new name. Canceling does not create a folder. The bundled XML represents the imported map; 3D edits are saved in the `.lo2s` file and do not rewrite Resolume coordinates. Live video/NDI/Spout feeds are not copied into this bundle.
+
+Imported models are embedded in the `.lo2s` file; you do not need to copy the original FBX/OBJ separately to reopen the scene. Finished Technical Plots PDFs are not generated by Compile Project: export them from **Plots** and add them to your delivery folder.
 
 **Tip:** open the compiled `.lo2s` to continue that copy of the job. The PNG maps are generated at native resolution, regardless of viewport zoom or preview quality.
 
@@ -347,7 +360,7 @@ The linked workflow is available in the installed Windows application. Unlink th
 - **Input Map** shows slice crops inside the Resolume composition.
 - **Output Map** shows the selected screen's output-device arrangement.
 
-In v0.8.0, Output Map starts with the first available screen. Choose another screen under **Tools → Map Display → Screen**; switching to Input Map and back retains that choice. Input Map already includes all screens in the composition and needs no screen selector. Output Map displays one real screen at a time; use **Export → All Output Maps** to export every screen as a separate map.
+Output Map starts with the first available screen. Choose another screen under **Tools → Map Display → Screen**; switching to Input Map and back retains that choice. Input Map already includes all screens in the composition and needs no screen selector. Output Map displays one real screen at a time; use **Export → All Output Maps** to export every screen as a separate map.
 
 **Pattern scope in 3D:** **Across Map** uses the full input composition as one pattern; each LED screen shows the portion at its input-map position. **Per Slice** restarts the pattern on each screen. This scope is retained during the test sequence and in Floating Preview for surfaces using the pattern source.
 
@@ -499,7 +512,7 @@ The editor applies to selected unlocked slices, screen groups, imported models a
 
 **Tip:** select a group to edit its shared pivot, or select its individual members to edit their own pivots. Choose a named anchor or use Custom for an exact measured offset.
 
-In v0.8.0, screen groups and imported model items use the same nine-position pad and custom XYZ controls. Offsets are measured from the combined bounds centre along the selected item’s axes. Screen-group offsets use the group’s local metre coordinates; imported-model offsets are shown in metres after source-unit conversion. Presets choose the current bounds and zero the depth offset. Repositioning a pivot preserves all visible geometry and nested child placement. Imported model Coordinates and the viewport gizmo use each item’s pivot for rotation and scaling. Multiple selected model items use a shared gizmo at the average of their pivots, counting selected parents only once. Pivot choices are saved with the project and support Undo/Redo.
+screen groups and imported model items use the same nine-position pad and custom XYZ controls. Offsets are measured from the combined bounds centre along the selected item’s axes. Screen-group offsets use the group’s local metre coordinates; imported-model offsets are shown in metres after source-unit conversion. Presets choose the current bounds and zero the depth offset. Repositioning a pivot preserves all visible geometry and nested child placement. Imported model Coordinates and the viewport gizmo use each item’s pivot for rotation and scaling. Multiple selected model items use a shared gizmo at the average of their pivots, counting selected parents only once. Pivot choices are saved with the project and support Undo/Redo.
 
 ### 8.5 Extrusion depth
 
@@ -546,26 +559,122 @@ Hidden visibility and locked controls use the same highlighted treatment; normal
 
 With 3Dconnexion 3DxWare installed and a SpaceMouse connected, use the main 3D viewport to pan, zoom and orbit with the device. The regular mouse remains available for navigation, selection and editing. Select a model, group or LED slice to keep its centre as the rotation reference in Object mode. Clearing the selection restores automatic rotation-centre behaviour. SpaceMouse navigation changes the camera only; it does not move or rotate scene objects. In Top, Front and Right views, SpaceMouse pans and zooms without rotating the view. In All Views, move the pointer over the pane you want to navigate.
 
-SpaceMouse navigation stops while the main viewport is paused, another workspace or application is active, or a dialog or text field has focus. It is not enabled in Floating Preview or the hosted web app. Open **Tools → 3Dconnexion Settings…** in the Windows 3D workspace to adjust device sensitivity, axis direction and navigation preferences.
+SpaceMouse navigation stops while the main viewport is paused, another workspace or application is active, or a dialog or text field has focus. It is not enabled in Floating Preview or Technical Plots. Open **Tools → 3Dconnexion Settings…** in the Windows 3D workspace to adjust device sensitivity, axis direction and navigation preferences.
 
 3D input device development tools and related technology are provided under license from 3Dconnexion. © 3Dconnexion 1992 - 2025. All rights reserved.
 
-## 9. Scene hierarchy and grouping
+## 9. Technical Plots
+
+Use **Resolume Pixel Map → 3D Simulation → Technical Plots** to prepare a delivery set. First check the map, pixel pitch and panel dimensions, then arrange the screens correctly in 3D. The plots describe that project; they cannot correct missing or inaccurate physical information.
+
+Open **Plots** below 3D in the mode rail. The left panel manages sheets, templates and the project title block. The right inspector edits the sheet and selected frame. The centre shows the page that will be delivered, with temporary editing controls when needed.
+
+Every page is **A3 landscape, 420 × 297 mm**. **Fit sheet** and the zoom selector change only your viewing size. The paper dimensions remain fixed. Patterns is a separate supporting mode for test images; a plot is the documentation you send with them.
+
+### 9.1 Choose sheets and content
+
+Start with **Pixel mapping set**, or use **Add sheet** to build your own set.
+
+| Sheet | Use it for |
+|---|---|
+| Input map | Slice locations within the Resolume composition, with input coordinates and dimensions. |
+| Output map | Slice locations on one selected output screen, with output coordinates and dimensions. |
+| Stage views | Front, Top, side and isometric views of the physical arrangement. |
+| Screen detail | One slice's raster, physical size, pixel pitch and panel grid. |
+| Screen Specifications | A reference table for the slices, including pitch, panel sizes and map coordinates. |
+| Delivery notes | Content instructions or production notes. |
+| Blank sheet | A page you populate with your own frames. |
+
+A **sheet** is one layout in the left list; a **frame** is a content area on that sheet. You can mix frame types on a page. Select a sheet to work on it and edit **Sheet title** in the inspector. Drag sheet rows above or below one another; the insertion line marks their new position. Sheets cannot be grouped or nested. **Duplicate** copies a sheet; **Remove** removes it. Undo restores an accidental removal.
+
+### 9.2 Place, resize and align frames
+
+1. Choose a sheet, then select a content type in **Add frame**.
+2. Move the outline over the paper. A new frame starts at **180 × 100 mm**; click to place it or press **Escape** to cancel.
+3. Turn on **Edit layout** to select and drag frames. The right inspector also lists each frame by title.
+4. Drag the selected frame's **bottom-right handle** to resize it. Its top-left corner stays in place. Enter exact X, Y, Width or Height values in millimetres when needed.
+5. Choose **Finish layout** to review the page without the editing overlays.
+
+Under **Page layout**, enable **Snap to grid** and set **Grid spacing** in millimetres. Frame placement, movement and resizing snap to this grid. Nearby edges, centres and equal spacing between frames also provide snap targets, with temporary alignment lines and gap measurements. These guides, selection borders and resize handles never print. Text frames omit the coloured editing title so it cannot cover the note.
+
+### 9.3 Copy frames
+
+Select a frame and press **Ctrl+D**, or choose **Duplicate frame**. The copy retains its size, title, content choices, typography, camera and framing. It is placed beside the original when space allows. If no neighbouring space is free, click on the sheet to place the copy or press Escape to cancel.
+
+In **Edit layout**, hold **Alt** before dragging to place a copy yourself. The same grid and alignment guides apply. Each copy is independent: for example, duplicate a Screen detail frame and choose another **Screen slice** without changing the original. Each duplication is one Undo step. Ctrl+D does not duplicate frames while you are typing in a field.
+
+### 9.4 Templates and branding
+
+A template stores your sheet layout, frame settings and branding for reuse. Enter **Template title**, then choose **Save template to library**. Choosing a saved preset fills this field with that preset's name. Keep the name to update that library entry, or enter a new name to save a separate template. **Import** and **Export** exchange template files with another computer.
+
+Applying a template replaces the current plot layout; Undo restores it. Templates do not contain the imported stage model or Resolume map. After applying one to another project, review every **Output screen** and **Screen slice** choice, since those bindings follow their position in the project's lists.
+
+Use **Project title block → Add your logo…** for a PNG or JPG logo. Fill in the project title, company, author, revision, date and footer note. An empty logo area stays blank; OpticMesh does not add advertising to the printed page. The footer note accepts spaces and line breaks and wraps on the paper. Drag the bottom of its input box downwards for more writing room; this does not enlarge the printed footer.
+
+Save the `.lo2s` project to keep the layout and title block with the scene. A template is a reusable layout, not a replacement for saving the project.
+
+### 9.5 Input and output maps
+
+Input maps use the composition's **top-left origin**. Output maps use the selected output screen's **top-left origin**; choose **Output screen** in Frame settings. Add or duplicate an Output frame for each output you need to document.
+
+Every slice is identified by its name and ID, the corresponding X/Y origin in pixels, pixel width and height, and physical width and height in metres. Screen IDs follow imported Resolume screen order, then slice order within each screen. The same IDs connect the maps to the specification table.
+
+Labels wrap inside a slice when space permits. Small, overlapping or warped slices may use matching numbered callouts below the map. Review these at a comfortable page zoom before exporting. If labels cannot fit, enlarge the frame or reduce **Frame text size**. Map coordinates and raster sizes come from Resolume; verify pitch and panel geometry in Pixel Map to get meaningful physical dimensions. Do not measure metres from the printed pixel-map layout.
+
+### 9.6 Screen details and specifications
+
+A **Screen detail** frame shows the selected slice's raster and aspect ratio, nominal and effective pitch, surface size, panel dimensions in millimetres, and pixels per panel. Choose the slice under **Frame settings → Screen slice**. Its checker cells follow the configured panel grid, including per-slice overrides. For example, a 500 × 500 mm cabinet using 128 × 128 pixels has an effective pitch of 3.90625 mm. Partial panels remain partial at the screen edges.
+
+Dimension labels sit outside the grid, with space before the panel note and frame border. Enlarge the frame or reduce its text size if the measurements cannot fit. Use the PNG exports in Patterns or Pixel Map for pixel-accurate test images; the grid on an A3 sheet is a reference drawing.
+
+**Screen Specifications** lists all slices with raster, aspect ratio, nominal/effective pitch, physical size, panel dimensions and raster, input origins and output coordinates. Physical size describes the screen surface, not its projected width in a stage view.
+
+Long specification tables continue onto additional printed pages automatically. Their number depends on the frame size, text size and slice count. The left list keeps the original sheet; use the continuation-page selector above the paper to inspect the extra pages. PDF and print include them automatically. Other frames on the specification sheet repeat on each continuation, so keep that layout simple.
+
+### 9.7 Camera views and framing
+
+Choose **Front, Back, Left, Right, Top, Bottom**, or an upper/lower **isometric** view. These are parallel views. Choose **Neutral shaded** or **Wireframe**, and whether to **Include imported models**. New frames use the camera name as their title. Change **Title** to give one a custom name.
+
+Changing a camera, render style or framing refreshes that view automatically. **Refresh views** updates the scene views from the current project. Export also updates outdated views before creating the pages. The main 3D camera stays unchanged.
+
+Use **Adjust view framing** to drag the composition inside its frame and scroll to zoom. A responsive preview follows the gesture; the sharp image updates when you stop. **View zoom** and **View pan X/Y** provide numeric control. **Fit view** resets the composition. Choose **Finish framing** or press Escape when done.
+
+Changing **Camera view** fits the new angle and resets that frame's zoom and pan. It keeps the frame's position and dimensions. Scene views are labelled **Not to scale** because you can freely zoom and frame them; use the stated dimensions, not measurements taken from the printed image.
+
+### 9.8 Text and typography
+
+Choose the paper font and text size under **Page layout**. Changing the page text size also updates its frames; use **Frame text size** afterwards to adjust an individual frame. Check the final page after changing typography, since larger text can need more space.
+
+Selecting a text frame reveals **Text formatting** with **Bold, Italic, Underline**, and **Left/Centre/Right** alignment. These controls apply to the entire note body, not individual selected words. They leave other frame types and the frame title unchanged. Text formatting is retained when saving, duplicating, exporting PDF or printing.
+
+Enter note content in **Text**, using Enter for a new line. Keep delivery instructions concise and check that they fit inside the frame. The bottom title-block **Footer note** is separate from a text frame and is intended for short notes.
+
+### 9.9 PDF and print
+
+With Plots active, choose **Export → Export A3 PDF…** for the complete sheet set, including specification continuations. Select a filename and destination. Editing guides and application controls are excluded. Review any amber notification before retrying a blocked export.
+
+**Export → Print…** opens OpticMesh's page preview. Browse with the arrows, choose an installed printer, select all sheets or the current preview sheet, and set the number of copies. **Export PDF** is also available here. Pages remain A3 landscape; the printer and paper settings must support that size.
+
+Before issuing a set, check the project title and revision, correct input/output screen choices, every slice label, panel sizes and pitch, useful camera framing, and note legibility. Save the `.lo2s` project alongside the final PDF. **Compile Project** includes the editable plot layout in the project file; export the PDF separately when you need a finished document in the delivery folder.
+
+---
+
+## 10. Scene hierarchy and grouping
 
 Hierarchy icons distinguish the item types: a **monitor** represents a Resolume screen, an **outlined cube** represents an editable slice/object, and the **group symbol** represents a group. Grouped slices keep their object icon.
 
-### 9.1 Hierarchy objects
+### 10.1 Hierarchy objects
 
 The hierarchy can contain:
 
-- ungrouped slices at scene root;
-- parent groups;
-- slices inside groups;
-- nested subgroups.
+- Resolume screen containers and their original slices;
+- imported models and mesh parts;
+- editable groups containing slices, models or both;
+- nested editable subgroups.
 
-Group transforms are true parent transforms. Child slices keep editable local transforms while their world transforms are derived from their parent chain.
+Moving, rotating or scaling a group also moves its children. You can still select and adjust a child within that group. Resolume screen containers accept only their own original slices; imported models belong in editable groups.
 
-### 9.2 Selecting groups
+### 10.2 Selecting groups
 
 - Click a group to select it.
 - `Ctrl`-click toggles individual groups in a multi-group selection.
@@ -576,18 +685,18 @@ If a selected parent and one of its selected descendants are transformed togethe
 
 **Imported-model range selection:** click the first item, scroll to the last and Shift-click it to select every model row in between. Scrolling and switching inspector tabs retain the anchor. Ctrl-click toggles one item; Ctrl+Shift-click adds a range. Expand any branches whose children you want included before selecting the range.
 
-### 9.3 Creating a group
+### 10.3 Creating a group
 
 1. Select one or more ungrouped slices.
 2. Choose **Group**.
 3. A new parent group is created around the combined geometry centre.
 4. The slices are converted to local child transforms without changing their visible world placement.
 
-### 9.4 Renaming
+### 10.4 Renaming
 
 Double-click a group name to rename it. Press `Enter` to accept the edit or `Escape` to leave editing. A single click selects the group; it does not begin renaming.
 
-### 9.5 Reordering and reparenting
+### 10.5 Reordering and reparenting
 
 Drag directly in the hierarchy:
 
@@ -600,11 +709,11 @@ Drag directly in the hierarchy:
 
 Reparenting converts transforms so the object does not visibly jump in world space.
 
-### 9.6 Collapse and expand
+### 10.6 Collapse and expand
 
 All groups use the same four-square icon, whether they contain screen slices or imported model parts. Use the separate disclosure arrow beside a group to collapse or expand its children. The expanded state is saved in the project. Searching the hierarchy temporarily reveals matching descendants.
 
-### 9.7 Visibility and locking
+### 10.7 Visibility and locking
 
 - The eye control shows or hides an object in the 3D scene.
 - The lock control enables or prevents editing.
@@ -612,13 +721,13 @@ All groups use the same four-square icon, whether they contain screen slices or 
 - When multiple groups are selected, clicking the visibility or lock control on one selected group applies that state to every selected group.
 - When multiple slices are selected, clicking a slice visibility or lock control applies the state to the selected slices.
 
-### 9.8 Ungrouping
+### 10.8 Ungrouping
 
-Choose **Ungroup** to dissolve selected groups while preserving world placement. In v0.8.0, direct Resolume slice children return to their original screen containers, retaining their current position, rotation and scale. Surviving nested editable groups and imported items retain a valid scene parent.
+Choose **Ungroup** to dissolve selected groups while preserving world placement. direct Resolume slice children return to their original screen containers, retaining their current position, rotation and scale. Surviving nested editable groups and imported items retain a valid scene parent.
 
 ---
 
-### Stage model import (v0.8.0)
+### Stage model import
 
 In **3D → Tools → 3D Models**, choose **Import Model…**. Use **Choose files** for a model and its companion files, or **Choose folder** to retain asset-folder paths. The left side contains the main-model selector, scale/orientation and hierarchy controls. Press **Read model** to inspect the larger preview on the right, with separate Width (X), Height (Y), Depth (Z), mesh and triangle readouts. **Cancel** and **Import into scene** stay in the bottom action bar. Supported formats are available in an expandable list. Cancelling the file or folder picker returns to this dialog, keeping any prepared preview and settings. You can then choose a different file or folder. The dialog’s **Cancel** or **×** button, or Escape while the dialog is active, closes the import without changing the scene.
 
@@ -693,7 +802,7 @@ In 3D mode, **Delete** removes selected imported models, groups or parts. It nev
 
 ### Imported-model storage and limits
 
-Imported geometry is saved inside the project, so reopening does not depend on the original model file. Projects containing imported models require v0.8.0 or later; keep a separate copy if you also use v0.7.0. Compile Project includes the imported geometry in the project file when a Resolume map is present. Source texture files, animation and other application-specific editing features are not retained.
+Imported geometry is saved inside the project, so reopening does not depend on the original model file. Use v0.9.0 or later to retain both imported models and Technical Plots; keep a separate copy before working with older releases. Compile Project includes the imported geometry in the project file when a Resolume map is present. Source texture files, animation and other application-specific editing features are not retained.
 
 There is no polygon-count gate. Selected/expanded file data has a 512 MiB import working budget; compressed embedded model data is limited to 150 MiB in total across all imported models, within a 192 MiB desktop project limit. The remaining space accommodates the Resolume XML, logos and project settings. Actual memory use can exceed file size. For heavy files, export only the stage geometry needed for screen alignment. Polygon reduction is not part of this version.
 
@@ -703,7 +812,7 @@ Select LED slices or a screen group and open **Material** in the bottom panel. T
 
 A slice inherits the closest parent-group material/display unless overridden. In a mixed group, group material edits reach both inheriting imported model surfaces and LED extrusions. Explicit child overrides take priority; set **Material** or **Display** to **Inherit** to restore that property's parent setting. Inheritance remains live through nested groups and saved projects. A group edit changes its inherited children together; multiple selections show common or mixed values. **Material → Inherit** removes a custom override. Empty and locked selections cannot be edited. Undo/Redo, project saving and supported scene exports retain extrusion materials. Double-click defaults are Diffuse 100%, Metallic 28%, Roughness 78% and Specular 100%, with the original dark extrusion colour as the inherited default.
 
-The reflection environment is a viewport aid and is not bundled with scene exports. Receiving applications supply their own reflection environment. Projects containing extrusion material overrides use schema 4 and require v0.8.0 Beta or later.
+The reflection environment is a viewport aid and is not bundled with scene exports. Receiving applications supply their own reflection environment. Use the current OpticMesh version when exchanging projects with material overrides or Technical Plots.
 
 In **Scene Display**, choose **HDRI1**, **HDRI2** or **HDRI3** to compare reflection looks. The three buttons appear side by side in both the left Tools panel and the Scene inspector; either row changes the same setting. The chosen look also updates Floating Preview, is saved with the project, and supports Undo/Redo. New projects start with **HDRI1**. **Tip:** lower Roughness to reveal reflection detail, or raise it for a softer surface. These fixed environments affect shaded imported models and LED extrusions; they do not change the background, floor, wireframes or LED display content, and do not reflect live imagery or moving scene objects. The HDRI files are not embedded in projects or scene exports.
 
@@ -711,33 +820,33 @@ In **Scene Display**, choose **HDRI1**, **HDRI2** or **HDRI3** to compare reflec
 
 **Reset transform** in Coordinates restores the recorded transform baseline while retaining the chosen pivot. New imports record their initial placement; model items from older projects without a recorded baseline use their placement before their first edit. Descendant reset baselines follow parent transformations. Reset and numeric edits respect locks and support Undo/Redo.
 
-## 10. Live sources and routing
+## 11. Live sources and routing
 
-### 10.1 Global sources
+### 11.1 Global sources
 
 The 3D Simulation can use:
 
 | Source | Description |
 |---|---|
 | **Pattern Generator** | Uses the current LO2S - OpticMesh test pattern at native quality. |
-| **Video Devices** | Uses a webcam, capture device, or another browser-accessible camera source. |
+| **Video Devices** | Uses a webcam, capture device, or another available camera source. |
 | **NDI** | Discovers and receives an NDI source through the Windows native bridge. |
 | **Spout** | Discovers and receives a local Spout sender through the Windows native bridge. |
 
 NDI and Spout are desktop-only features.
 
-**v0.8.0 startup:** Opening a project or restoring the latest session starts all LED slices on **Pattern Generator**, with per-slice source routing reset to **Inherit global source**. The 3D inspector opens on **Scene**. To resume a live preview, open **Source**, select the global feed, then choose and connect the sender or device. Reapply individual slice routing where needed. Source quality, scene geometry and materials remain saved.
+**On startup:** Opening a project or restoring the latest session starts all LED slices on **Pattern Generator**, with per-slice source routing reset to **Inherit global source**. The 3D inspector opens on **Scene**. To resume a live preview, open **Source**, select the global feed, then choose and connect the sender or device. Reapply individual slice routing where needed. Source quality, scene geometry and materials remain saved.
 
 When a selected live feed has no connected image, its LED display faces show solid black. Connected images retain their normal colours; this does not change the scene background or extrusion materials.
 
-### 10.2 Source quality
+### 11.2 Source quality
 
 - **Low Latency** prioritizes responsiveness and a latest-frame workflow.
 - **High Quality** prioritizes source detail and may require more decoding, transfer, and GPU resources.
 
 Use Low Latency while arranging complex scenes. Switch to High Quality when inspecting texture detail or creating a final visual review.
 
-### 10.3 Per-slice source overrides
+### 11.3 Per-slice source overrides
 
 Selected slices can:
 
@@ -749,29 +858,29 @@ Selected slices can:
 
 If selected slices have different source routing, the inspector displays a mixed state. **Reset selected routing** returns the selection to the global source.
 
-### 10.4 Performance status
+### 11.4 Performance status
 
 Open **Performance** below the viewport for live measurements. The panel contains readings and their status labels; the colour key, measurement guidance and troubleshooting tips are documented here. The panel refreshes twice per second and can be collapsed with the diagnostic-bar chevron. At smaller window sizes, scroll the panel to see all metrics.
 
 | Metric | Meaning |
 | --- | --- |
-| UI FPS | Live animation-callback cadence while the panel is open and visible. Measures UI scheduling even when the scene is idle; it is not the number of rendered/presented 3D frames or video/output FPS. Display refresh and browser scheduling limit this value. |
-| UI frame · peak | Longest UI callback interval in the last second. Spikes can indicate main-thread stalls or browser/OS scheduling delays. |
+| UI FPS | Interface responsiveness while the panel is visible. It stays active when the scene is idle and differs from viewport or video-output FPS. |
+| UI frame · peak | Longest interface frame time in the last second. Repeated spikes can correspond to visible stutters. |
 | CPU · app | Combined Electron-process CPU usage, normalized across all logical processors. Requires desktop; external NDI/Spout helper processes are excluded. The first reading needs a sampling baseline. |
 | CPU · system | Whole-machine CPU usage, including other applications and external helpers. Requires desktop. |
 | App memory · private | Combined private committed memory of Electron processes on Windows. This is not exclusively resident RAM and does not include external helpers or VRAM. |
 | RAM · system | Physical RAM used / total for the whole machine. Requires desktop. |
 | GPU / VRAM | Per-device NVIDIA GPU utilization and dedicated memory used / total, including all applications. Requires the desktop app and supported NVIDIA driver telemetry; unavailable readings are not reported as zero. |
 | Viewport redraws / s | Actual viewport redraws per second, measured over the last second. A still scene displays **Idle** because no redraw is needed; a hidden window or manually paused main viewport displays **Paused**. This is separate from monitor refresh rate and incoming video FPS. |
-| CPU render · avg / peak | Average and slowest viewport drawing time during the last second. Includes JavaScript drawing and WebGL submission, but excludes waiting for GPU completion and unrelated application work. |
+| CPU render · avg / peak | Average and slowest CPU time spent drawing the viewport during the last second. Higher values mean more drawing work. |
 | Last CPU draw | Most recent draw duration, retained while idle. |
-| Last GPU draw | Latest valid GPU time for a complete 3D viewport draw, including all visible panes. Optional hardware/browser support is required; unsupported, invalidated and lost-context measurements are labelled explicitly. Canvas 2D GPU timing is unavailable. |
+| Last GPU draw | Latest measured GPU drawing time across visible 3D panes. Not available on every system or for the 2D canvas. |
 | Render size | Actual 3D drawing-buffer dimensions or 2D preview raster. An interactive working raster can differ from native export dimensions. |
 | Scene triangles | Total triangles in LED and imported meshes, including hidden items. Each mesh instance is counted once; camera movement, selection outlines and All Views do not change this total. Geometry changes, imports and deletions update it. Floor, grid and gizmos are excluded. |
 | Draw calls / Drawn triangles | Calls and triangles submitted for the latest complete 3D viewport frame. Camera culling changes which objects are drawn; selection outlines and additional panes can draw geometry again. This measures rendering work, not model size. Output capture is excluded. |
 | Textures / geometries | Renderer-tracked allocated resource counts; these are counts, not memory bytes. |
 
-**Reading the counters:** UI FPS continues during an idle view while **Viewport redraws / s** correctly shows **Idle**. OpticMesh renders on demand; an idle reading does not mean poor performance. Monitoring does not force scene redraws. CPU/memory update about once per second and NVIDIA counters about every 2–3 seconds while this panel is visible. Closing it stops polling; hidden windows pause monitoring. Missing, stale or unsupported values are explicit. Localhost in a normal browser shows UI/render measurements; native CPU, RAM and GPU readings require a desktop development session or compatible desktop version.
+**Reading the counters:** UI FPS continues while **Viewport redraws / s** may show **Idle** when the scene is still. That is normal. CPU/memory readings update about once per second and supported NVIDIA readings about every 2–3 seconds. Missing or unsupported values are labelled; they do not mean zero load.
 
 **Performance colours:** readings use off-white **Normal**, warm amber **Attention**, and soft coral **High pressure**, with a text label beside the value. RAM and VRAM include a percentage alongside used/total memory. GPU utilization and VRAM are rated independently.
 
@@ -789,15 +898,15 @@ If drawing is heavy, hide unnecessary models or pause the main viewport while us
 
 **Camera redraws:** The Viewport redraws reading increases while you orbit, pan or zoom. An idle reading is normal when the view is still and no animated content is playing.
 
-**Finding a bottleneck:** compare the same camera movement or source playback across readings. Falling UI FPS with a high UI frame peak can indicate main-thread work, though OS/browser scheduling can also cause it. High GPU utilization with longer GPU draw times can indicate GPU load; high VRAM occupancy indicates memory pressure, but includes other applications. Low overall CPU usage does not rule out one busy CPU core. Compare system usage with app usage before attributing a slowdown to the current scene. No single reading proves the cause.
+**Finding a bottleneck:** compare the same camera movement or source playback across readings. Falling UI FPS with a high UI frame peak can indicate main-thread work, though other system activity can also cause it. High GPU utilization with longer GPU draw times can indicate GPU load; high VRAM occupancy indicates memory pressure, but includes other applications. Low overall CPU usage does not rule out one busy CPU core. Compare system usage with app usage before attributing a slowdown to the current scene. No single reading proves the cause.
 
 Native-source status can report source resolution, displayed frame rate, conversion time, copy time, canvas time, and overwritten/missed frames. Performance depends on source resolution, codec, network conditions, GPU, scene geometry, and the number of active feeds.
 
 ---
 
-### 10.5 Floating Preview
+### 11.5 Floating Preview
 
-In **3D**, open **Output → Floating Preview** to create a camera-only preview. This menu item is greyed out in Patterns and Pixel Map. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
+In **3D**, open **Output → Floating Preview** to create a camera-only preview. This menu item is greyed out outside 3D. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
 
 | Action | Control |
 | --- | --- |
@@ -808,17 +917,27 @@ In **3D**, open **Output → Floating Preview** to create a camera-only preview.
 | Resize the window | Drag the **bottom-right corner** only |
 | Close the preview | Small **top-right ×**, **Escape** while preview is focused, or toggle **Output → Floating Preview** off in 3D |
 
-**Pause the main viewport:** With Floating Preview open, choose **Output → Pause main viewport**. The editor shows a paused notice and **Resume viewport** button while the undocked preview keeps its camera and live updates. The pause applies to the main 3D view, including All Views; Pixel Map and Patterns remain editable. Closing Floating Preview automatically resumes the main view. This setting is temporary and is not saved in projects.
+**Pause the main viewport:** With Floating Preview open, choose **Output → Pause main viewport**. The editor shows a paused notice and **Resume viewport** button while the undocked preview keeps its camera and live updates. The pause applies to the main 3D view, including All Views; Pixel Map, Patterns and Plots remain editable. Closing Floating Preview automatically resumes the main view. This setting is temporary and is not saved in projects.
 
-Pausing stops main-viewport draws and suspends its repeated media/pattern texture updates when no native output needs them. Active NDI/Spout captures continue rendering their own frames. Scene resources remain allocated for quick resumption, so this reduces rendering work rather than releasing all GPU memory. A static viewport already renders on demand; the largest saving is with changing sources or test sequences.
+Pausing can reduce rendering load while Floating Preview continues. It does not unload the scene or stop active NDI/Spout output. The benefit is greatest with moving sources or running test sequences.
 
 The Windows application opens a borderless window above other applications, without a bright outer outline. The top-left move handle, top-right close button and bottom-right resize handle remain visible. Windows start at 640 × 360 and can be resized freely down to 240 × 160; the camera adapts to the window's aspect ratio without stretching models. Changing the window size does not change model dimensions or native stream resolution.
 
-**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Floating Preview can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map or Patterns keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. The Floating Preview menu item is disabled in Patterns and Pixel Map. To close an existing preview from those workspaces, use its × button or Escape while it is focused, or choose Output → OFF. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
+**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Floating Preview can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map, Patterns or Plots keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. The Floating Preview menu item is disabled outside 3D. To close an existing preview from those workspaces, use its × button or Escape while it is focused, or choose Output → OFF. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
 
-## 11. Exporting
+## 12. Exporting
 
-### 11.1 PNG export
+Choose the deliverable for the recipient:
+
+| Deliverable | Where to create it |
+|---|---|
+| Pixel-accurate test image or map | **Export** in Patterns or Pixel Map. |
+| 3D scene for another application | **Export** in 3D. |
+| Printable mapping and stage documentation | **Export A3 PDF…** or **Print…** in Plots. |
+| Editable OpticMesh project plus XML and PNG maps | **File → Compile Project…**. Export the PDF separately. |
+
+
+### 12.1 PNG export
 
 - **Export PNG / Export Current PNG:** exports the current Test Pattern or current map view.
 - **Export Input PNG:** exports the full Resolume composition input map.
@@ -827,7 +946,7 @@ The Windows application opens a borderless window above other applications, with
 
 Desktop PNG exports are routed to `Documents\OpticMesh\Test Patterns` unless another location is explicitly selected by the workflow.
 
-### 11.2 3D scene export formats
+### 12.2 3D scene export formats
 
 | Format | Use |
 |---|---|
@@ -835,8 +954,8 @@ Desktop PNG exports are routed to `Documents\OpticMesh\Test Patterns` unless ano
 | **glTF Package** | ZIP package containing glTF scene resources. |
 | **OBJ Package** | ZIP package with metre-based coordinates. Import at scale 1 with source units set to metres. |
 | **MVR 1.5** | Scene meshes for compatible entertainment-production workflows. |
-| **STL (v0.8.0)** | Binary world-positioned triangle geometry. No materials or hierarchy; coordinates are written in metres, so select metres when importing into unitless consumers. |
-| **USDZ (v0.8.0)** | Packaged scene geometry and supported appearance. Compatibility with receiving applications should be checked. |
+| **STL** | Binary world-positioned triangle geometry. No materials or hierarchy; coordinates are written in metres, so select metres when importing into unitless consumers. |
+| **USDZ** | Packaged scene geometry and supported appearance. Compatibility with receiving applications should be checked. |
 
 3D exports include:
 
@@ -849,22 +968,32 @@ Desktop PNG exports are routed to `Documents\OpticMesh\Test Patterns` unless ano
 
 3D exports exclude the viewport floor, grid, camera, selection outlines, and transform gizmos.
 
-In v0.8.0, visible imported stage geometry is included alongside screens and can also be exported without a Resolume map. Display wireframe is an editor option; model geometry exports as a neutral shaded surface. OBJ includes its neutral material definition. Import availability does not imply export support for the same format: FBX, 3DS, DAE, standalone GDTF and separate USD/USDA/USDC export are not provided.
+visible imported stage geometry is included alongside screens and can also be exported without a Resolume map. Display wireframe is an editor option; model geometry exports as a neutral shaded surface. OBJ includes its neutral material definition. Import availability does not imply export support for the same format: FBX, 3DS, DAE, standalone GDTF and separate USD/USDA/USDC export are not provided.
 
 **OBJ units:** one exported coordinate unit equals one metre, with Y as the up axis. OBJ has no standard physical-unit declaration, so select **metres** in the receiving application's import settings. The package README and OBJ comments identify this convention, but cannot configure the importer automatically. Choosing millimetres makes the geometry 1,000 times too small; choosing centimetres makes it 100 times too small. Changing only the receiving application's displayed unit does not correct an import-scale mismatch. Reimport using the correct source unit. This applies equally to LED screens and imported stage models, regardless of their original source units.
 
-### 11.3 Export validation
+### Technical Plots export
+
+Prepare and review the A3 sheets in **Plots**, then use **Export → Export A3 PDF…** or **Print…**. Specification continuation pages are included. Page zoom does not affect output size, and editing guides are excluded. See [PDF and print](#99-pdf-and-print) for the delivery checks and printer options.
+
+### 12.3 Export validation
 
 Export may be blocked when a curved screen's extrusion depth is physically invalid for its radius. Reduce extrusion or curvature, then export again.
 
 ---
 
-## 12. Keyboard and mouse reference
+## 13. Keyboard and mouse reference
 
-### 12.1 Current keyboard shortcuts
+### 13.1 Current keyboard shortcuts
 
 | Shortcut | Scope | Action |
 |---|---|---|
+| `Ctrl+D` | Technical Plots | Duplicate the selected frame with all its settings. Inactive while editing a field. |
+| `Alt`-drag | Technical Plots, Edit layout | Drag a copy of a frame with the current snapping and alignment guides. |
+| `Ctrl+Z` | Technical Plots | Undo a plot edit when not typing in a field. |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Technical Plots | Redo a plot edit when not typing in a field. |
+| `Shift` + Up/Down or mouse wheel | Technical Plots numeric fields | Increase or decrease by 10. Without Shift, change by 1. |
+| `Escape` | Technical Plots | Cancel pending frame placement or finish view framing. In a numeric field, restore the uncommitted value. |
 | `Ctrl+S` | Application | Save. Opens Save As for Startup Project; overwrites the active named project. |
 | `Ctrl+Z` | 3D Simulation | Undo the latest 3D history operation. Works while a parameter input has focus. |
 | `Ctrl+Shift+Z` | 3D Simulation | Redo. |
@@ -887,7 +1016,7 @@ Export may be blocked when a curved screen's extrusion depth is physically inval
 | `Ctrl`-click | Pixel Map / hierarchy / 3D | Toggle an item in a multi-selection. |
 | `Shift`-click | Pixel Map / hierarchy / 3D | Select a range between hierarchy rows; in the viewport, extend or toggle the current selection. |
 | `Ctrl`-drag | 3D viewport | Add visible model items or screens inside a marquee, using the active selection type. |
-| `Space` + left-drag | 2D canvas | Pan the pattern or map. Does not activate while typing in an input. |
+| `Space` + left-drag | 2D canvas | Pan the pattern or map. Does not activate while typing in text or numeric fields. |
 | `Enter` | Numeric or group-name field | Commit the entered value or finish group renaming. |
 | `Escape` | Editable field | Cancel/revert supported field editing or finish group renaming without continuing the edit mode. |
 | `Tab` / `Shift+Tab` / arrow keys | Save or project-replacement prompt | Move focus between available actions. No action starts selected. |
@@ -900,7 +1029,7 @@ The 3D letter shortcuts accept lowercase and uppercase. Letter and F1–F5 view 
 
 **Tip:** with the 3D workspace active and no field, menu, or dialog open, press F to fit the entire visible scene. Use S to focus selected objects; in All Views, hover the pane you want to focus before pressing S. F reframes all panes, straightens the horizon and keeps your selection.
 
-### 12.2 Mouse controls
+### 13.2 Mouse controls
 
 | Control | 2D canvas | 3D viewport |
 |---|---|---|
@@ -912,7 +1041,7 @@ The 3D letter shortcuts accept lowercase and uppercase. Letter and F1–F5 view 
 | Wheel over numeric field | Adjust value | Adjust value |
 | `Shift` + wheel over numeric field | Larger adjustment | Larger adjustment |
 
-### 12.3 All Views navigation
+### 13.3 All Views navigation
 
 Press **F1** for Perspective, **F2** for Top, **F3** for Right, **F4** for Front, or **F5** for All Views. View shortcuts use the function keys without Ctrl, Alt, or Shift. On keyboards with media controls, hold **Fn** if required to send the function key. Switching views preserves object placement and selection.
 
@@ -927,9 +1056,9 @@ Choose **All Views** in the 3D toolbar. The panes are Perspective (upper left), 
 
 ---
 
-### 12.4 Floating Preview controls
+### 13.4 Floating Preview controls
 
-Floating Preview is a camera-only preview in v0.8.0 Beta. Its controls are separate from the editor's object tools.
+Floating Preview is a camera-only preview. Its controls are separate from the editor's object tools.
 
 | Control | Action |
 | --- | --- |
@@ -942,9 +1071,28 @@ Floating Preview is a camera-only preview in v0.8.0 Beta. Its controls are separ
 
 Object-selection, transform, grouping, delete, undo/redo, and project shortcuts do not run while the preview is focused. Continue scene editing in the main editor.
 
-## 13. Numeric fields and mixed values
+### 13.5 Technical Plots controls
 
-### 13.1 Arithmetic entry
+| Control | Action |
+|---|---|
+| Click a sheet row | Open that sheet. |
+| Drag a sheet row | Reorder it at the insertion line; no nesting. |
+| Add frame, then click the page | Place the outline at the cursor. Escape cancels. |
+| Drag a frame in Edit layout | Move it with the current grid and alignment snapping. |
+| Drag the bottom-right handle | Resize the selected frame. |
+| Alt-drag / Ctrl+D | Copy a frame with its settings. |
+| Left-drag in Adjust view framing | Pan the view inside its frame. |
+| Wheel in Adjust view framing | Zoom that view. |
+| Escape / Finish framing | Leave view framing. |
+| Wheel over the page outside view framing | Scroll the paper; use Fit sheet or its zoom selector for page magnification. |
+| Up/Down or wheel over a numeric field | Adjust by 1; hold Shift to adjust by 10. |
+| Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo plot edits when not typing. |
+
+Text fields retain normal editing keys. Bold, Italic and Underline use the buttons in **Text formatting**; no dedicated formatting keyboard shortcuts are assigned.
+
+## 14. Numeric fields and mixed values
+
+### 14.1 Arithmetic entry
 
 Supported numeric fields accept arithmetic expressions containing:
 
@@ -970,7 +1118,7 @@ Press `Enter` or leave the field to commit. Invalid, non-finite, or out-of-range
 
 Click the double-chevron control at the right of a numeric field to open its Increase and Decrease buttons. These buttons have larger click targets; they retain the field’s existing increment, limits, and undo behavior. Use Tab to reach the buttons and Enter or Space to activate them. Escape closes the controls and returns focus to the adjustment button; clicking elsewhere also closes them. Direct entry and wheel adjustment remain available. Hover over a numeric value or shortened project label to recover its full text.
 
-### 13.2 Signed fields
+### 14.2 Signed fields
 
 Position, rotation, and curvature fields accept negative values. Physical size, resolution, cabinet size, and pixel pitch must remain positive.
 
@@ -980,7 +1128,7 @@ Scrolling over a numeric value adjusts it without moving the surrounding panel. 
 
 The existing step size and Shift adjustment continue to apply where supported. When no numeric value is selected, hovering a numeric control still allows wheel adjustment without simultaneously scrolling its panel.
 
-### 13.3 Mixed selections
+### 14.3 Mixed selections
 
 When several selected objects have different values, the relevant field shows a dash, blank mixed state, or **Multiple values**. Enter a value to apply it across the selected objects.
 
@@ -992,7 +1140,7 @@ Double-click a slider's thumb or track to restore that setting's built-in defaul
 
 The reset uses the same scope as dragging: selected-slice controls update the selected slices, while global controls update the project setting. It changes only that parameter; disabled sliders remain disabled. The readout and preview update immediately, and the reset is saved with the project. Existing 3D undo/redo also applies to slider resets.
 
-### 13.4 Rotation continuity
+### 14.4 Rotation continuity
 
 Rotation values can pass ±90° and continue beyond a full revolution. Numeric fields retain a continuous angle close to the previous value while you rotate.
 
@@ -1000,7 +1148,7 @@ Multiple-turn values are retained where possible so `450°` remains meaningful i
 
 ---
 
-## 14. Production workflow recommendations
+## 15. Production workflow recommendations
 
 ### Top toolbar menus
 
@@ -1017,20 +1165,20 @@ For keyboard use, Tab to a toolbar button and press Enter or Space to toggle its
 - In All Views, use Front to align horizontal/vertical placement, Top for horizontal/depth placement, and Right for vertical/depth placement. Watch Perspective to check the combined result.
 - Zoom into the working pane around the cursor without disturbing the other camera views. Use Focus for the selection in the last-used pane; reserve Fit Scene for reframing all cameras.
 
-### 14.1 Before importing
+### 15.1 Before importing
 
 - Give Resolume screens and slices clear, production-safe names.
 - Confirm composition resolution.
 - Remove unused or accidental slices.
 - Save a clean Advanced Output XML revision.
 
-### 14.2 Establish physical truth first
+### 15.2 Establish physical truth first
 
 The most important rule is: **set the real pixel pitch before judging 3D size or spacing**.
 
 Do not choose a preset simply because it is close. Enter the manufacturer's exact nominal pitch when needed. Confirm cabinet dimensions and resulting panel raster.
 
-### 14.3 Build in stages
+### 15.3 Build in stages
 
 1. Import and validate XML.
 2. Set pixel pitch and cabinet geometry.
@@ -1040,10 +1188,11 @@ Do not choose a preset simply because it is close. Enter the manufacturer's exac
 6. Group only after the basic arrangement is trustworthy.
 7. Add curvature and extrusion.
 8. Connect live sources.
-9. Review the arrangement and source routing, then save a named project.
-10. Export deliverables.
+9. Review the arrangement and source routing.
+10. Prepare Technical Plots from that verified scene; check screen choices, coordinates, dimensions and page framing.
+11. Save a named project and export the final PDF, maps and any required 3D scene files.
 
-### 14.4 Grouping strategy
+### 15.4 Grouping strategy
 
 - Group screens according to real scenic or structural assemblies.
 - Use nested groups for a complete structure containing subassemblies.
@@ -1051,7 +1200,7 @@ Do not choose a preset simply because it is close. Enter the manufacturer's exac
 - Avoid selecting both a parent and its child unless you intentionally need hierarchy-range selection; the app prevents double transformation, but a cleaner selection is easier to understand.
 - Confirm group placement and alignment before final export.
 
-### 14.5 Save strategy
+### 15.5 Save strategy
 
 - Let Startup Project autosave protect work in progress.
 - Create a named file for meaningful project milestones.
@@ -1061,9 +1210,9 @@ Do not choose a preset simply because it is close. Enter the manufacturer's exac
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
-### 15.1 All screens overlap in 3D
+### 16.1 All screens overlap in 3D
 
 Check the following:
 
@@ -1073,7 +1222,7 @@ Check the following:
 4. The project was not loaded from an older build with invalid transforms.
 5. Use **Reset adaptive layout** on the affected slices if custom transforms are no longer wanted.
 
-### 15.2 Physical spacing looks wrong
+### 16.2 Physical spacing looks wrong
 
 - Confirm the central/primary screen is the automatic anchor at `X = 0`.
 - Confirm exact pitch rather than relying on a nearby preset.
@@ -1081,11 +1230,11 @@ Check the following:
 - Inspect whether selected slices have individual overrides.
 - Remember that the Resolume pixel map provides a 2D relationship, not stage depth; Z placement must be created in the 3D scene.
 
-### 15.3 Selected fields show a dash
+### 16.3 Selected fields show a dash
 
 The selected objects contain different values. Enter a value to unify them, or select one object to inspect its exact setting.
 
-### 15.4 Rotation changes X or Z near 90°
+### 16.4 Rotation changes X or Z near 90°
 
 Rotation fields should remain continuous as you drag. If another axis changes unexpectedly, note the following when reporting the issue:
 
@@ -1094,11 +1243,11 @@ Rotation fields should remain continuous as you drag. If another axis changes un
 - record the values before and after crossing 90°;
 - report whether the change occurred during one drag or after repeated drags.
 
-### 15.5 Rotation wraps after one revolution
+### 16.5 Rotation wraps after one revolution
 
 For an exact multi-turn result, enter the desired degree value directly. Rotation fields accept values beyond one revolution.
 
-### 15.6 Group or slice jumps when reparented
+### 16.6 Group or slice jumps when reparented
 
 Reparenting is designed to preserve the world transform. If a jump occurs, record:
 
@@ -1109,7 +1258,7 @@ Reparenting is designed to preserve the world transform. If a jump occurs, recor
 
 Save a copy of the `.lo2s` file before attempting to reproduce the problem.
 
-### 15.7 NDI source is not found
+### 16.7 NDI source is not found
 
 - Use the installed Windows application.
 - Open Windows **Installed apps** and confirm **NDI Runtime** is present. The OpticMesh installer supplies it automatically when needed; rerun or repair the installer if it was cancelled.
@@ -1119,14 +1268,14 @@ Save a copy of the `.lo2s` file before attempting to reproduce the problem.
 - Confirm the sender is active and its source name is visible to another NDI application.
 - Try Low Latency quality first.
 
-### 15.8 Spout source is not found
+### 16.8 Spout source is not found
 
 - Confirm the Spout sender is running on the same Windows computer.
 - Confirm GPU compatibility between sender and receiver.
 - Scan again after starting the sender.
 - Close software that may hold the sender exclusively.
 
-### 15.9 3D interaction becomes slow
+### 16.9 3D interaction becomes slow
 
 - Use Low Latency source quality.
 - Disconnect live video while arranging geometry.
@@ -1135,11 +1284,11 @@ Save a copy of the `.lo2s` file before attempting to reproduce the problem.
 - Close other GPU-heavy applications.
 - Use the Performance panel to identify which interactions take the longest to draw.
 
-### 15.10 3D export is blocked
+### 16.10 3D export is blocked
 
 Read the notification. If a curved screen has invalid extrusion, reduce depth or curvature until the body fits within the available radius.
 
-### 15.11 Startup project does not restore
+### 16.11 Startup project does not restore
 
 - Open **Reveal Projects folder**.
 - Check for `Startup Project.lo2s` and `Startup Project.previous.lo2s`.
@@ -1149,13 +1298,25 @@ Read the notification. If a curved screen has invalid extrusion, reduce depth or
 
 ---
 
-## 16. Projection formats and current limitations
+### Technical Plots: missing labels, views or pages
 
-### 16.1 Choosing a view
+- **Missing or cramped labels:** enlarge the frame or reduce Frame text size. Check numbered callouts below input/output maps and read the amber notification.
+- **Wrong physical dimensions:** confirm pitch and panel geometry in Pixel Map, then verify the 3D arrangement before reissuing the plots.
+- **Wrong slice or output after applying a template:** choose the correct Screen slice or Output screen in each affected frame.
+- **View too small or cropped:** use Adjust view framing or Fit view. Changing Camera view also fits the new angle.
+- **More specification pages than sheet rows:** use the continuation-page selector; the full set is included in PDF and print.
+- **Notes cut short:** enlarge the text frame, reduce text size or shorten the note. Expanding the footer input gives typing room but does not enlarge the printed footer.
+- **Print unavailable or failed:** check that a printer is installed and supports A3 landscape, or export PDF for printing elsewhere.
+
+---
+
+## 17. Projection formats and current limitations
+
+### 17.1 Choosing a view
 
 Use the 3D toolbar to choose **Perspective**, **Top**, **Right**, **Front**, or **All Views**. Narrower windows show a camera selector; wider windows show individual view buttons. Each pane in All Views has independent camera controls and displays the same scene.
 
-### 16.2 Projection formats
+### 17.2 Projection formats
 
 The Patterns viewport toolbar separates the projection format from Pattern Fill:
 
@@ -1169,17 +1330,18 @@ While you adjust a Dome control, the preview temporarily uses a lower resolution
 
 Dome typography is proportional to the selected native raster, so its apparent label size remains consistent when moving between 1K, 2K, 4K, 6K, and 8K. Ring weight is selected as **Thin**, **Medium**, or **Bold**.
 
-### 16.3 Current limitations
+### 17.3 Current limitations
 
 - The 3D Simulation remains Beta and is not a photoreal render engine.
-- A material editor is unavailable.
-- Editable custom group-axis placement is not yet implemented.
-- Multiple groups can be selected together; mixed group-and-slice selection is unavailable.
+- Technical Plots currently uses A3 landscape pages; other paper sizes and fixed drawing scales are not available.
+- Stage views in plots are images in a parallel projection, labelled Not to scale; maps and text remain vector content in PDF.
+- Text formatting applies to a complete note body; individual-word formatting is not available.
+- Technical Plots documents pixel mapping and screen geometry. LED processor routing, sending-card layouts and lighting patch are outside its scope.
 - Large scenes, curvature, and multiple live sources can reduce responsiveness. Use the Performance panel to monitor viewport drawing.
 
 ---
 
-## 17. Terminology
+## 18. Terminology
 
 | Term | Meaning |
 |---|---|
@@ -1201,5 +1363,9 @@ Dome typography is proportional to the selected native raster, so its apparent l
 | **Spout** | Windows GPU texture-sharing system used between applications on one computer. |
 | **GLB/glTF** | Modern 3D scene formats supporting meshes, transforms, and UV data. |
 | **MVR** | Entertainment-production scene exchange format. |
+| **Technical Plot** | A printable sheet documenting mapping, physical screen information and scene views. |
+| **Frame** | A content area placed on a Technical Plots sheet. |
+| **Template** | A reusable plot layout and branding setup; it does not include the project scene. |
+| **Isometric view** | A parallel three-axis view showing the arrangement without perspective convergence. |
 
 NDI® is a registered trademark of Vizrt NDI AB. Visit [ndi.video](https://ndi.video/) for official NDI technology, licensing, runtime, and tools information.

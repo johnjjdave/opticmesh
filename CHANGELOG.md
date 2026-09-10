@@ -2,6 +2,33 @@
 
 Features, improvements, fixes and compatibility notes for LO2S - OpticMesh.
 
+## [0.9.0 Beta] - 2026-09-10
+
+A preview release for testing Technical Plots. Keep a separate project copy before opening it in an older version. The hosted web app remains at v0.7.0.
+
+- Reviewed the manual and shortcut guide around the Pixel Map → 3D Simulation → Technical Plots workflow. Added illustrated Plots topics for layouts, templates, maps, specifications, framing, text and delivery; refreshed workspace images and corrected outdated saving, export and feature-limit descriptions.
+
+- Matched Technical Plots scrollbars to the dark inspector styling and kept the page layout stable when notes are expanded. Fixed spaces being intercepted while typing in text areas.
+
+- Added text-frame formatting controls for bold, italic, underline and alignment, preserved in projects, templates, duplicates and printed/PDF pages.
+
+- Added a Technical Plots workspace with fixed A3 landscape sheets, editable frame layouts, reusable templates and user-supplied logos and title blocks.
+- Added input/output maps, screen detail grids, and specification tables covering pixel pitch, raster, aspect ratios, physical dimensions and mapping coordinates. Long tables continue onto additional sheets.
+- Added orthographic and isometric scene views with shaded/wireframe choices and optional stage geometry.
+- Added desktop PDF export, an OpticMesh print preview with page navigation and printer selection, project persistence, and Undo/Redo for plot layouts.
+- Added cursor-based frame placement, adjustable grid snapping, and drag-and-drop sheet reordering.
+- Added paper fonts and frame text sizes, multiline footer notes, and arithmetic fields with the shared adjustment controls and Shift steps of 10.
+- Scene frames refresh automatically when their settings change, follow camera names until renamed, and support independent pan and zoom.
+- Screen Specifications and Screen Detail use the configured physical panel sizes and panel raster; map labels wrap instead of disappearing on narrow slices.
+- Screen Detail reserves space for horizontal and vertical pixel dimensions and wrapped panel notes, preventing overlap with the grid or frame edges.
+- Technical Plots uses the shared amber notifications and its own Tools menu label.
+- Added Ctrl+D, Duplicate frame and Alt-drag frame copying, preserving settings with independent editing, snapped placement and Undo/Redo.
+- Added bottom-right frame resizing, live dimensions, edge/centre alignment guides and equal-spacing snapping with millimetre measurements.
+- Input and output maps show each slice’s corresponding X/Y origin, pixel dimensions and physical size. Narrow slices keep wrapped labels inside whenever they fit; numbered callouts are reserved for insufficient space or overlapping/warped geometry.
+- Improved scene framing with an immediate drag/zoom preview and a sharp update after interaction. Removed the shifting view-update footer control.
+- Changing a plot frame’s camera view now resets its pan and zoom to Fit View; custom titles remain unchanged.
+- New view titles use capitalized camera names and can be renamed directly, without an automatic-title checkbox.
+
 ## [0.8.0 Beta] - 2026-09-09
 
 Version 0.8.0 is a beta preview. Version 0.7.0 remains the stable Windows release and hosted web app.

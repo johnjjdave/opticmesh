@@ -504,6 +504,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  require('./technical-plots.cjs').registerTechnicalPlots(editorWindows, workspacePaths);
   ipcMain.on("app:startup-progress", (event, stage) => {
     const state = editorWindows.get(event.sender.id);
     if (!state || state.ready) return;

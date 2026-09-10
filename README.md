@@ -4,17 +4,19 @@
 
 # LO2S - OpticMesh
 
-**Build your LED layout. Check the pixel map. Preview your visuals on stage.**
+**Check your pixel map. Simulate your stage. Deliver clear technical plots.**
 
-OpticMesh is a free, open-source companion for visual artists, LED technicians and production designers. Turn a Resolume Advanced Output map into physically sized LED surfaces, place them within an imported stage design, and preview patterns or live visuals from your chosen camera angle. You can also create calibration patterns and export the maps and geometry needed by the rest of your workflow.
+OpticMesh is a free, open-source companion for visual artists, LED technicians and production designers. Turn a Resolume Advanced Output map into physically sized LED surfaces, place them within an imported stage design, and preview patterns or live visuals from your chosen camera angle. Prepare branded A3 technical plots from that verified layout, with coordinates, dimensions, panel specifications and scene views. Patterns remains a supporting mode for calibration and content checks.
 
-**New preview: v0.8.0 Beta · Windows x64**
+**New preview: v0.9.0 Beta · Windows x64**
 
-[Download v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0) · [Changelog](CHANGELOG.md)
+[Download v0.9.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.9.0) · [Changelog](CHANGELOG.md)
 
 ![OpticMesh 3D workspace with LED screens](public/manual/3d-overview.png)
 
-## One workflow, three workspaces
+## One workflow, four workspaces
+
+The production flow is **Resolume Pixel Map → 3D Simulation → Technical Plots**. Use Patterns whenever you need standalone calibration images.
 
 ### Patterns — prepare and calibrate your display
 
@@ -42,15 +44,27 @@ Build a physically scaled preview from your Resolume slices and add an imported 
 - **Live sources:** patterns, video devices, NDI and Spout, with scene-wide or per-slice routing. Native NDI/Spout I/O requires Windows.
 - **Scene exports:** GLB, glTF, OBJ, MVR mesh packages, STL and USDZ. Preservation of hierarchy, materials and units depends on the format.
 
+### Technical Plots — prepare the handover
+
+Create fixed **A3 landscape** sheets with your own logo and title block. Combine input/output maps, screen details, specifications, orthographic or isometric stage views, and delivery notes.
+
+- **Mapping information:** slice names and IDs, input or output coordinates, pixel dimensions, physical sizes, pixel pitch and panel sizes/raster.
+- **Page layout:** place, drag, resize and copy frames with grid snapping, alignment guides and millimetre spacing. Reorder sheets and save reusable templates.
+- **View framing:** choose the camera and render style, then pan or zoom inside each frame. Each view refreshes when its settings change.
+- **Typography:** adjustable fonts and sizes, with bold, italic, underline and alignment for note frames.
+- **Delivery:** export PDF or use the A3 print preview. Long specification tables continue onto additional pages.
+
+Scene views use parallel projection and are labelled **Not to scale**. Review the printed measurements rather than measuring stage geometry from the page.
+
 ## Floating Preview — keep a preview above your show software
 
 In 3D mode, **Output → Floating Preview** opens an **always-on-top, camera-only preview** that stays live while you work elsewhere. Drag its top-left handle to position it and the bottom-right corner to resize it. Inside the preview, left-drag orbits, right-drag pans and the wheel zooms. You cannot accidentally edit objects there.
 
-The preview keeps its own camera while receiving scene, material, map-style and live-source updates. It stays open when you switch to Patterns or Pixel Map. **Pause main viewport** stops drawing the main 3D view while the preview continues.
+The preview keeps its own camera while receiving scene, material, map-style and live-source updates. It stays open when you switch to Patterns, Pixel Map or Plots. **Pause main viewport** stops drawing the main 3D view while the preview continues.
 
 ## Save, share and troubleshoot
 
-Save your work in a **`.lo2s` project**, including imported model geometry. **File → Compile Project** collects the project, Resolume XML and input/output PNG maps into a named folder.
+Save your work in a **`.lo2s` project**, including imported model geometry and editable plot sheets. **File → Compile Project** collects the project, Resolume XML and input/output PNG maps into a named folder. Export the finished plots separately as PDF.
 
 The Windows app maintains startup and recovery saves. Use **File → Open Recent** to reopen one of your six most recently used projects. OpticMesh asks before replacing unsaved work and offers **Save**, **Quit without saving**, or **Cancel** when closing. Projects reopen on Pattern Generator so you can reconnect live inputs deliberately.
 
@@ -58,11 +72,13 @@ The Windows app maintains startup and recovery saves. Use **File → Open Recent
 
 ## Getting started
 
-1. Install the [v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0)
+1. Install the [v0.9.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.9.0)
 2. Create a pattern or import a Resolume Advanced Output XML file in **Pixel Map**.
 3. Set your LED product's pixel pitch and check its physical dimensions.
 4. Switch to **3D**, import stage geometry if needed, and position your screens.
-5. Choose your source, frame the preview, and save a named project before exporting.
+5. Choose your source and verify the 3D arrangement.
+6. Open **Plots**, prepare your sheets, and check labels, dimensions and view framing.
+7. Save a named project, then export the PDF and any required map or 3D files.
 
 Each release includes its own searchable, illustrated guide. Open **Guide** or **Help → OpticMesh Manual** inside the app for instructions matching your installed version. Keyboard shortcuts are included in the same guide, with adjustable text size and enlarged screenshots.
 
@@ -70,12 +86,13 @@ Each release includes its own searchable, illustrated guide. Open **Guide** or *
 
 Development from v0.8.0 onward focuses on Windows. The hosted web app remains at v0.7.0; it will not receive the new desktop features.
 
-| Capability | Windows v0.8.0 Beta | Hosted web v0.7.0 |
+| Capability | Windows v0.9.0 Beta | Hosted web v0.7.0 |
 | --- | --- | --- |
 | Patterns, Resolume maps and LED scene layout | Yes | Yes |
 | Imported stage models and material controls | Yes | Not in the hosted stable release |
 | NDI / Spout input and output | Yes | No |
 | Always-on-top Floating Preview | Yes | No |
+| Technical Plots, templates and A3 PDF/print | Yes | No |
 | Managed startup and recovery saves | Yes | No — save projects manually |
 
 The Windows x64 installer includes the official NDI Runtime prerequisite when a compatible runtime is absent; NDI Tools is not required. The installer is unsigned. Windows may show an unknown-publisher prompt; use the official release and its `SHA256SUMS.txt` to verify your download.
@@ -89,12 +106,12 @@ Documents\OpticMesh\
 └── Test Patterns\
 ```
 
-**Projects** holds named projects and recovery files; **Exports** is the default for 3D exports; **Test Patterns** is the default for PNG maps and patterns. Ctrl+S updates a named project, or opens Save As for the startup project.
+**Projects** holds named projects and recovery files; **Exports** is the default for 3D exports and Technical Plots PDFs; **Test Patterns** is the default for PNG maps and patterns. Ctrl+S updates a named project, or opens Save As for the startup project.
 
 ## Compatibility and scope
 
-- v0.8.0 is a beta preview. Keep a separate copy of projects you need to reopen in v0.7.0; projects containing imported models require v0.8.0 or later.
-- Imported models are static geometry. Fixture lighting simulation, animation playback, polygon reduction and Technical Plots are not included in this release.
+- v0.9.0 is a beta preview for testing. Keep a separate copy of projects you need to reopen in older versions; Technical Plots requires v0.9.0 or later.
+- Imported models are static geometry. Fixture lighting simulation, animation playback, polygon reduction are not included in this release.
 - Import units and format capabilities matter. OBJ and STL require a source-unit choice; MVR uses its defined units. Review the manual before exchanging files with another application.
 - 3D NDI/Spout output is 1920 × 1080, targeting 30 fps; achievable performance depends on the scene, sources and system. PNG exports retain their configured native resolution.
 - Projects and media processing stay local. Desktop update checks contact GitHub; NDI exchanges frames over the network. See the [privacy and release policy](CODE_SIGNING_POLICY.md).
