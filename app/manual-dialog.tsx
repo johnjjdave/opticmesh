@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useRef,useState,type CSSProperties,type ReactNode} from "react";
-import manual from "../MANUAL.md?raw";
+import manual from "./manual-content.md?raw";
 import UiIcon from "./ui-icon";
 import "./manual-dialog.css";
 

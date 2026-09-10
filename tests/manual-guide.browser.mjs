@@ -12,7 +12,7 @@ try{
  assert(await dialog.getByText('Version 0.8.0',{exact:true}).isVisible());
  assert.equal(await dialog.getByText(/Manual version: 0.1|Living Beta documentation|Applies to:/).count(),0);
  assert.equal(await content.evaluate(e=>getComputedStyle(e).fontSize),'16px');
- const headings=(await fs.readFile('MANUAL.md','utf8')).split(/\r?\n/).filter(l=>/^#{2,3} /.test(l)&&l!=='## Contents');
+ const headings=(await fs.readFile('app/manual-content.md','utf8')).split(/\r?\n/).filter(l=>/^#{2,3} /.test(l)&&l!=='## Contents');
  const slug=s=>s.replace(/^#+ /,'').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1').toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s/g,'-');
  let chapter;
  for(const heading of headings){

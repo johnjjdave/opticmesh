@@ -8,7 +8,7 @@ test("packages a verified official NDI Runtime prerequisite", async () => {
     readFile(new URL("../desktop/scripts/prepare-ndi-runtime.mjs", import.meta.url), "utf8"),
     readFile(new URL("../desktop/build/installer.nsh", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
-    readFile(new URL("../MANUAL.md", import.meta.url), "utf8"),
+    readFile(new URL("../app/manual-content.md", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
   ]);
 

@@ -10,7 +10,7 @@ OpticMesh is a free, open-source companion for visual artists, LED technicians a
 
 **New preview: v0.8.0 Beta · Windows x64**
 
-[Download v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0) · [User manual](MANUAL.md) · [Changelog](CHANGELOG.md)
+[Download v0.8.0 Beta](https://github.com/johnjjdave/opticmesh/releases/tag/v0.8.0) · [Changelog](CHANGELOG.md)
 
 ![OpticMesh 3D workspace with LED screens](public/manual/3d-overview.png)
 
@@ -32,7 +32,7 @@ Export input/output maps or selected slices as PNGs. In Windows, link an XML pre
 
 Build a physically scaled preview from your Resolume slices and add an imported stage model around them. The focus is practical visual simulation: understand screen placement, stage proportions and how the content reads from different viewpoints.
 
-- **Stage-model import:** MVR, GDTF mesh geometry, FBX, OBJ, glTF/GLB, 3DS, Collada/DAE and STL. USD-family import is experimental; see [format support](MANUAL.md#stage-model-import-v080).
+- **Stage-model import:** MVR, GDTF mesh geometry, FBX, OBJ, glTF/GLB, 3DS, Collada/DAE and STL. USD-family import is experimental; see format support in the in-app guide.
 - **One scene hierarchy:** select, rename, group, reparent, hide and lock imported objects alongside your LED layout. Mixed groups can contain both imported parts and slices; Resolume slices remain protected from deletion.
 - **Precise placement:** Move, Rotate and Scale, editable pivots, local/world coordinates, arithmetic input, one-metre snapping and Undo/Redo. **Transfer** matches position and orientation to a reference object without changing the source pivot.
 - **LED geometry:** physical pixel pitch, extrusion and curved screen surfaces.
@@ -64,7 +64,7 @@ The Windows app maintains startup and recovery saves. Use **File → Open Recent
 4. Switch to **3D**, import stage geometry if needed, and position your screens.
 5. Choose your source, frame the preview, and save a named project before exporting.
 
-Open **Guide** or **Help → OpticMesh Manual** for the searchable, illustrated manual. Keyboard shortcuts are included in the same guide, with adjustable text size and enlarged screenshots.
+Each release includes its own searchable, illustrated guide. Open **Guide** or **Help → OpticMesh Manual** inside the app for instructions matching your installed version. Keyboard shortcuts are included in the same guide, with adjustable text size and enlarged screenshots.
 
 ## Windows and web availability
 
