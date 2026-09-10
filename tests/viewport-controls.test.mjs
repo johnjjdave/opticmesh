@@ -106,18 +106,60 @@ test('empty/hidden geometry cannot trap perspective travel; disabled controls do
  } finally{view.controls.dispose();view.transform.dispose();hidden.geometry.dispose();hidden.material.dispose();}
 });
 import { createZoomSurfaceQuery } from '../app/viewport-controls.ts';
+import { prepareZoomGeometry } from '../app/zoom-geometry.ts';
 
-test('zoom depth uses transformed bounds for dense meshes without touching their triangles', () => {
+test('zoom depth queries cached surfaces under transforms without a full triangle scan', () => {
  const geometry=new THREE.PlaneGeometry(20,20,150,150);geometry.computeBoundingBox();
+ prepareZoomGeometry(geometry);
  const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
  mesh.position.set(0,0,-4);mesh.rotation.y=.2;mesh.scale.set(2,1,3);mesh.updateMatrixWorld();
  mesh.raycast=()=>{throw new Error('Dense mesh triangle scan during zoom');};
  const ray=new THREE.Raycaster(new THREE.Vector3(0,0,10),new THREE.Vector3(0,0,-1)),query=createZoomSurfaceQuery(ray);
  try {
-  assert(Math.abs(query([mesh])-14)<1e-7,'rotated and scaled local bounds preserve navigation depth');
+  assert(Math.abs(query([mesh])-14)<1e-7,'rotated and scaled surfaces preserve navigation depth');
   mesh.position.z=-8;assert(Math.abs(query([mesh])-18)<1e-7,'moving a model refreshes navigation bounds');
   const parent=new THREE.Group();parent.add(mesh);parent.visible=false;assert.equal(query([mesh]),undefined,'hidden ancestor excluded');
  }finally{geometry.dispose();mesh.material.dispose();}
+});
+
+test('dense hollow meshes do not trap mouse zoom against their enclosing box', () => {
+ const geometry=new THREE.TorusGeometry(4,.4,100,240);geometry.computeBoundingBox();prepareZoomGeometry(geometry);
+ const material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide});
+ const ring=new THREE.Mesh(geometry,material),screen=new THREE.Mesh(new THREE.PlaneGeometry(30,30),material);
+ ring.position.z=9.5;screen.position.z=-10;ring.updateMatrixWorld();screen.updateMatrixWorld();
+ ring.raycast=()=>{throw new Error('Full dense scan during wheel');};
+ const view=fixture(0,false,()=>[ring,screen]),ray=new THREE.Raycaster(new THREE.Vector3(0,0,10),new THREE.Vector3(0,0,-1));
+ try {
+  const query=createZoomSurfaceQuery(ray);
+  assert.equal(query([ring,screen]),20,'look through the ring to the actual screen');
+  const before=view.camera.position.clone();wheel(view,160,120);
+  assert(view.camera.position.distanceTo(before)>1,'nearby empty bounds cannot slow mouse dolly');
+  ray.ray.origin.set(4,0,10);assert(query([ring,screen])<1,'real curved ring surface still anchors close-up zoom');
+  ray.ray.origin.set(0,0,9.5);assert.equal(query([ring,screen]),19.5,'inside bounds remains empty');
+ }finally{view.controls.dispose();view.transform.dispose();geometry.dispose();screen.geometry.dispose();material.dispose();}
+});
+
+test('unprepared dense geometry is never treated as a solid bounding box or prepared during wheel', () => {
+ const geometry=new THREE.TorusGeometry(4,.4,100,240);geometry.computeBoundingBox();
+ const material=new THREE.MeshBasicMaterial(),mesh=new THREE.Mesh(geometry,material);
+ mesh.raycast=()=>{throw new Error('Unbounded scan');};
+ const ray=new THREE.Raycaster(new THREE.Vector3(0,0,10),new THREE.Vector3(0,0,-1));
+ try{assert.equal(createZoomSurfaceQuery(ray)([mesh]),undefined);}finally{geometry.dispose();material.dispose();}
+});
+
+test('cached zoom surfaces respect near/far and face sides with nonuniform and negative scale', () => {
+ const geometry=new THREE.PlaneGeometry(20,20,150,150);geometry.computeBoundingBox();prepareZoomGeometry(geometry);
+ const material=new THREE.MeshBasicMaterial({side:THREE.DoubleSide}),mesh=new THREE.Mesh(geometry,material);
+ mesh.rotation.y=.3;mesh.scale.set(-2,3,.5);mesh.position.z=-4;mesh.updateMatrixWorld();
+ const ray=new THREE.Raycaster(new THREE.Vector3(0,0,10),new THREE.Vector3(.1,0,-1).normalize()),query=createZoomSurfaceQuery(ray);
+ try{
+  for(const side of [THREE.FrontSide,THREE.BackSide,THREE.DoubleSide]){
+   material.side=side;const expected=ray.intersectObject(mesh,false)[0]?.distance,actual=query([mesh]);
+   if(expected===undefined)assert.equal(actual,undefined);else assert(Math.abs(actual-expected)<1e-6);
+  }
+  ray.far=2;assert.equal(query([mesh]),undefined);
+  ray.far=100;ray.near=20;assert.equal(query([mesh]),undefined);
+ }finally{geometry.dispose();material.dispose();}
 });
 
 test('zoom triangle work stays bounded across many meshes while selection remains exact', () => {

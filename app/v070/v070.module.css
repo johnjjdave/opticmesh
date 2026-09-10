@@ -44,6 +44,7 @@
 .app button{line-height:16px}
 .app :is(input,select),.app :is(strong,b,small){font-variant-numeric:tabular-nums}
 .app :is(button,input,select,a,[tabindex]):focus-visible{outline:2px solid var(--accent)!important;outline-offset:-2px}
+.app :global(.project-replacement-dialog h2):focus{outline:none!important}
 .search:focus-within,.projectInput:focus-visible,.select:focus-within,.app :global(.number-control):focus-within{border-color:var(--accent)}
 .app button:disabled,.app :is(input,select):disabled{opacity:1;color:var(--text-muted);background:var(--surface-panel);border-style:dashed;cursor:not-allowed}
 .app button:disabled :global(.ui-icon){opacity:.6}
@@ -118,6 +119,8 @@
 
 .menus section strong{font-weight:700;color:var(--text-primary)}
 .menus section button{font-weight:500}
+.menus section button[aria-pressed="true"]{background:var(--surface-hover);color:var(--text-primary)}
+.menus section button:disabled{background:var(--surface-panel);color:var(--text-muted)}
 
 /* All scene item types use the same Coordinates fieldset. */
 fieldset.transformFields{border:0;margin:0;padding:0;min-width:0}

@@ -10,10 +10,14 @@ Version 0.8.0 is a beta preview. Version 0.7.0 remains the stable Windows releas
 
 - Added 3Dconnexion SpaceMouse navigation in the main 3D viewport, alongside the regular mouse. Selected models, groups and slices act as the Object-mode rotation reference. Open Tools → 3Dconnexion Settings to adjust the installed driver; SpaceMouse control does not affect Floating Preview.
 - Fit Scene and its F shortcut straighten the camera horizon after rolling the view.
-- Renamed Windowed output to **Floating Preview** throughout the app and guide.
+- Renamed Windowed output to **Floating Preview** throughout the app and guide. Its Output menu item is available only in 3D; an open preview continues running across workspace changes.
+- Tools menu items now show whether the tools panel is visible and toggle between Studio and Focused mode.
 - Added File → Open Recent with the six most recently opened or saved projects, retained between sessions. Demo access is now exclusively File → Open Demo.
 - Opening another project asks to save unsaved work. Closing offers Cancel, Quit without saving, and Save or Save As. Startup displays a loading window while the project and opening view are prepared.
+- Save prompts open without selecting an action; Tab and arrow keys navigate their buttons. Cancelling a file or folder picker keeps Import 3D Model open with its preview and options intact.
 - Fixed project names after opening and Save As, and distant first-load camera framing. Existing saved camera views are preserved.
+- Fixed mouse zoom slowing against empty space around detailed imported models. Zoom follows the visible surface beneath the cursor, including through openings in a model.
+- Kept background surfaces and the floor/grid stable when zooming between foreground objects and distant parts of a scene.
 - Made hierarchy visibility and lock states clearer with matching highlights and distinct open/closed padlocks. Notifications use amber text and an outline while retaining their normal background and ten-second dismissal.
 
 ### Imported stages and scene editing

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { prepareZoomGeometry, zoomGeometryTree } from '../app/zoom-geometry.ts';
 import { DEFAULT_MODEL_MATERIAL, applyBodyMaterial, nodeMaterial, editModelMaterial, encodeArray, validateModels, transformModels, groupModelNodes, ModelLayer, packModelGeometry, modelGeometry, removeModelNodes, modelPivotEntry, modelSelectionPivot, setModelPivots, modelCoordinateItems, editModelCoordinate, resetModelCoordinates } from '../app/model-data.ts';
 const fixture=()=>({id:'model',name:'Stage',format:'obj',hierarchy:true,triangles:1,warnings:[],geometries:{g:{position:encodeArray(new Float32Array([0,0,0,1,0,0,0,1,0]))}},nodes:[{id:'root',parent:null,name:'Root',matrix:new THREE.Matrix4().toArray(),visible:true,locked:false},{id:'part',parent:'root',name:'Part',geometry:'g',matrix:new THREE.Matrix4().makeTranslation(3,2,1).toArray(),visible:true,locked:false}]});
 
@@ -12,16 +13,34 @@ test('live views share decoded arrays with independent GPU ownership and release
  assert.notEqual(a,b);assert.notEqual(a.attributes.position,b.attributes.position);
  for(const field of ['position','normal','uv'])assert.equal(a.attributes[field].array,b.attributes[field].array);
  assert.equal(a.index.array,b.index.array);assert.notEqual(a.boundingBox,b.boundingBox);
+ const tree=zoomGeometryTree(a);assert.ok(tree);assert.equal(tree,zoomGeometryTree(b));
  let mainDisposals=0,previewDisposals=0;
  a.addEventListener('dispose',()=>mainDisposals++);b.addEventListener('dispose',()=>previewDisposals++);
  preview.dispose();preview.dispose();assert.equal(previewDisposals,1);assert.equal(mainDisposals,0);
+ assert.equal(zoomGeometryTree(b),undefined);assert.equal(zoomGeometryTree(a),tree);
  const reopened=new ModelLayer();reopened.sync([model]);assert.equal(reopened.meshes.get('part').geometry.attributes.position.array,a.attributes.position.array);
  main.sync([]);assert.equal(mainDisposals,1);assert.equal(reopened.meshes.size,1);
  const retained=reopened.meshes.get('part').geometry.attributes.position.array;
  reopened.dispose();const fresh=new ModelLayer();fresh.sync([model]);
  assert.notEqual(fresh.meshes.get('part').geometry.attributes.position.array,retained,'last owner releases decoded cache');
+ assert.notEqual(zoomGeometryTree(fresh.meshes.get('part').geometry),tree,'last owner releases navigation cache');
  assert.deepEqual(fresh.meshes.get('part').geometry.attributes.position.array,retained);
  fresh.dispose();main.dispose();
+});
+
+test('navigation acceleration preserves indexed and non-indexed topology and all attributes',()=>{
+ for(const indexed of [true,false]){
+  let geometry=new THREE.TorusGeometry(3,.4,12,64);
+  if(!indexed){const original=geometry;geometry=original.toNonIndexed();original.dispose();}
+  const attributes=Object.fromEntries(Object.entries(geometry.attributes).map(([key,attribute])=>[key,attribute.array.slice()]));
+  const index=geometry.index?.array.slice(),originalIndex=geometry.index;
+  const groups=structuredClone(geometry.groups);
+  prepareZoomGeometry(geometry);const tree=zoomGeometryTree(geometry);assert.ok(tree);assert.equal(tree.indirect,true);
+  prepareZoomGeometry(geometry);assert.equal(zoomGeometryTree(geometry),tree,'preparing twice reuses tree');
+  assert.equal(geometry.index,originalIndex);assert.deepEqual(geometry.index?.array,index);assert.deepEqual(geometry.groups,groups);
+  for(const [key,array] of Object.entries(attributes))assert.deepEqual(geometry.attributes[key].array,array);
+  geometry.dispose();assert.equal(zoomGeometryTree(geometry),undefined);
+ }
 });
 
 test('material, transform and geometry replacement keep other views isolated',()=>{

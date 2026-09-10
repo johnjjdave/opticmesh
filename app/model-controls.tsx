@@ -68,7 +68,12 @@ export function ModelImportDialog({ onClose, onImport }: { onClose: () => void; 
   };
   const totalBytes=files.reduce((sum,file)=>sum+file.size,0);
   const candidates=files.filter(file=>MODEL_EXTENSIONS.includes(file.name.split(".").pop()!.toLowerCase()));
-  return <dialog ref={dialog} className="model-dialog" aria-labelledby="model-import-heading" onCancel={onClose}>
+  return <dialog ref={dialog} className="model-dialog" aria-labelledby="model-import-heading" onCancel={event=>{
+    // File/folder inputs bubble their own cancel event when the native chooser
+    // is dismissed. Only a cancel request on this dialog closes the import.
+    if(event.target!==event.currentTarget)return;
+    event.preventDefault();onClose();
+  }}>
     <header className="model-import-header"><UiIcon name="slice"/><h2 id="model-import-heading">Import 3D model</h2><button className="model-import-close" aria-label="Close import" title="Close import" onClick={onClose}><UiIcon name="close"/></button></header>
     <div className="model-import-body">
       <div className="model-import-settings">

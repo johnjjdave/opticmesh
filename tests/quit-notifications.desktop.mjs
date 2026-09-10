@@ -23,13 +23,26 @@ try {
   await close();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Quit without saving', exact: true }).waitFor();
+  assert.equal(await dialog.locator('button:focus').count(),0,'No action is selected when the dialog opens');
+  assert.equal(await dialog.locator('button:focus-visible').count(),0);
+  assert.equal(await dialog.getByRole('heading').evaluate(e=>getComputedStyle(e).outlineStyle),'none','Initial dialog focus has no visible selection outline');
+  await page.keyboard.press('Enter');
+  assert(await dialog.isVisible(),'Opening the prompt does not arm an action for Enter');
   await dialog.screenshot({ path: path.join(root, 'work/quit-without-saving.png') });
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const focusIs=async name=>assert(await dialog.getByRole('button',{name,exact:true}).evaluate(e=>e===document.activeElement));
+  for(const [key,name] of [['Tab','Cancel'],['ArrowRight','Quit without saving'],['ArrowDown','Save As…'],['ArrowRight','Cancel'],['Shift+Tab','Save As…'],['ArrowLeft','Quit without saving'],['ArrowUp','Cancel']]){
+    await page.keyboard.press(key);await focusIs(name);
+  }
+  assert.equal(await dialog.locator('button:focus-visible').count(),1,'Keyboard focus remains visible');
+  await page.keyboard.press('Enter');
+  await dialog.waitFor({state:'detached'});
   assert.equal(await page.getByLabel('Project name', { exact: true }).inputValue(), 'Untitled work');
   await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
   await close();
   await dialog.getByRole('button', { name: 'Save As…', exact: true }).click();
   await dialog.getByText('Save cancelled. Your current project is still open.', { exact: true }).waitFor();
+  await focusIs('Save As…');
+  await page.keyboard.press('ArrowLeft');await focusIs('Quit without saving');
   // Quit must not invoke a file picker, even after a cancelled Save As.
   await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => { throw new Error('Unexpected Save As'); }; });
   const closed = page.waitForEvent('close');
@@ -70,6 +83,11 @@ try {
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Save', exact: true }).waitFor();
   await dialog.getByRole('button', { name: 'Save As…', exact: true }).waitFor();
+  assert.equal(await dialog.locator('button:focus').count(),0,'Named projects also start with no action selected');
+  await page.keyboard.press('ArrowLeft');
+  assert(await dialog.getByRole('button',{name:'Save',exact:true}).evaluate(e=>e===document.activeElement));
+  await page.keyboard.press('ArrowLeft');
+  assert(await dialog.getByRole('button',{name:'Save As…',exact:true}).evaluate(e=>e===document.activeElement));
   await dialog.screenshot({ path: path.join(root, 'work/quit-named-project.png') });
   const closed = page.waitForEvent('close');
   await dialog.getByRole('button', { name: 'Quit without saving', exact: true }).click();

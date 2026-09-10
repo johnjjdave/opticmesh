@@ -6,6 +6,7 @@ LO2S - OpticMesh is distributed under the [MIT License](https://github.com/johnj
 | --- | --- |
 | React, React DOM, and Scheduler | MIT; copies in [public/licenses](https://github.com/johnjjdave/opticmesh/tree/main/public/licenses) |
 | Three.js | MIT; copy in [public/licenses](https://github.com/johnjjdave/opticmesh/tree/main/public/licenses) |
+| three-mesh-bvh | MIT; [license copy](https://github.com/johnjjdave/opticmesh/blob/main/public/licenses/three-mesh-bvh-MIT.txt) |
 | @xmldom/xmldom | MIT; [license copy](https://github.com/johnjjdave/opticmesh/blob/main/public/licenses/xmldom-MIT.txt) |
 | Geist and Geist Mono fonts | [SIL Open Font License 1.1](https://github.com/johnjjdave/opticmesh/blob/main/public/brand/OFL.txt) |
 | Spout2 / SpoutLibrary | [BSD 2-Clause](https://github.com/johnjjdave/opticmesh/blob/main/native/vendor/Spout2/LICENSE), copyright Lynn Jarvis |

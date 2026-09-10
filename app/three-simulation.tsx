@@ -6,6 +6,7 @@ import { DEFAULT_BODY_MATERIAL, type BodyAppearance } from "./slice-material";
 import { SelectionOutline } from "./selection-outline";
 import { applyBodyMaterial, createModelMaterial, ModelLayer, descendants, inherited, modelSelectionPivot, type ImportedModel } from "./model-data";
 import * as THREE from "three";
+import { updateSceneCameraClipping } from "./camera-clipping.ts";
 import { pivotOffset, pivotKey, type SlicePivot } from "./slice-pivot";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { resetNavigationHorizon, restoreNavigationUp, savedNavigationUp } from "./camera-orientation";
@@ -352,16 +353,7 @@ export default function ThreeSimulation(props: SimulationProps) {
       meshes.forEach((mesh) => bounds.expandByObject(mesh));
       bounds.union(modelLayer.bounds());
       navigationBounds.copy(bounds);
-      const sphere = bounds.isEmpty() ? new THREE.Sphere(controls.target.clone(), 1) : bounds.getBoundingSphere(new THREE.Sphere());
-      views.forEach(({ camera, controls }) => {
-        const sceneDistance = camera.position.distanceTo(sphere.center);
-        const targetDistance = Math.max(0.1, camera.position.distanceTo(controls.target));
-        // Maintain a stable near/far ratio at every zoom level. Reversed depth
-        // then keeps thin extrusions clean without pushing LED faces into bodies.
-        camera.near = THREE.MathUtils.clamp(targetDistance / 10000, 0.001, 0.25);
-        camera.far = Math.max(500, targetDistance * 10, sceneDistance + sphere.radius * 4 + 50);
-        camera.updateProjectionMatrix();
-        });
+      views.forEach(({ camera }) => updateSceneCameraClipping(camera, bounds));
       spaceMouse?.sync();
     };
     let pendingFit = false;

@@ -121,6 +121,7 @@ Changing workspace does not create a new project. All three workspaces belong to
 - **Project bar:** project name, save status, notifications, and Studio/Focused layout controls.
 - **Left mode rail:** Patterns, Pixel Map (outlined Resolume symbol), 3D, and Guide.
 - **Tools panel:** searchable tools for the active workspace. Focused mode hides this panel to give the viewport more room.
+- **Tools menu:** the workspace Tools item toggles between Studio and Focused mode. Its background is highlighted while the tools panel is visible; select it again to hide or restore the panel.
 - **Central viewport and toolbar:** the pattern, map, or 3D scene with its editing and viewing controls.
 - **Right inspector:** settings and selection details for the active workspace.
 - **Bottom diagnostics:** validation, map changes where available, output status, and performance measurements.
@@ -203,6 +204,8 @@ Background autosave always writes to the managed startup/recovery files. It neve
 
 **Closing the Windows app:** If your work has not been saved to a project file, OpticMesh asks **Do you want to save your project?** Choose **Save As…** to create a named file, or **Save** to update the active file. **Cancel** or Escape keeps the project open. **Quit without saving** closes the app without saving your changes to a project file. If you choose to save, closing proceeds only after a successful save; cancelling the file dialog or a failed save keeps your work open. An unchanged saved project closes normally, and its saved-file destination is remembered on restart while the file remains available.
 
+Save prompts open without selecting a button. Use Tab, Shift+Tab or the arrow keys to move between actions, then Enter or Space to activate one. Escape cancels the prompt.
+
 ### 5.3 Project commands
 
 - **Save:** applies the correct Startup Project or named-project behaviour described above.
@@ -215,7 +218,7 @@ Background autosave always writes to the managed startup/recovery files. It neve
 
 **File → Open Demo** opens the sample project in 3D. Switch to Pixel Map to explore its mapping tools. Loading the demo replaces the current working state and disconnects any linked XML file.
 
-**Before replacing a project:** New Project and Open Demo open a centred confirmation with **Cancel**, **Continue without saving**, and **Save and continue**. Open Project and Open Recent also show this confirmation when the current project has unsaved changes. Cancel or Escape keeps the current project. Cancel is focused initially; Tab and Shift+Tab cycle between the available actions. Save and continue saves to the active named project, or opens Save As when a named destination is needed; replacement happens only after a successful save. A cancelled or failed save leaves the project and confirmation open. Controls are temporarily disabled while saving.
+**Before replacing a project:** New Project and Open Demo open a centred confirmation with **Cancel**, **Continue without saving**, and **Save and continue**. Open Project and Open Recent also show this confirmation when the current project has unsaved changes. Cancel or Escape keeps the current project. No action is selected when the prompt opens. Tab, Shift+Tab and the arrow keys move between available actions; Enter or Space activates the focused button. Save and continue saves to the active named project, or opens Save As when a named destination is needed; replacement happens only after a successful save. A cancelled or failed save leaves the project and confirmation open. Controls are temporarily disabled while saving.
 
 The confirmation also appears after autosave: startup recovery follows the current working project and is not a permanent named backup. Project replacement clears the scene Undo history, so Ctrl+Z cannot restore the preceding project after choosing to continue. In browsers that can only download files, verify the downloaded `.lo2s` file before explicitly choosing Continue without saving; requesting a download does not automatically replace the project.
 
@@ -617,7 +620,7 @@ Choose **Ungroup** to dissolve selected groups while preserving world placement.
 
 ### Stage model import (v0.8.0)
 
-In **3D → Tools → 3D Models**, choose **Import Model…**. Use **Choose files** for a model and its companion files, or **Choose folder** to retain asset-folder paths. The left side contains the main-model selector, scale/orientation and hierarchy controls. Press **Read model** to inspect the larger preview on the right, with separate Width (X), Height (Y), Depth (Z), mesh and triangle readouts. **Cancel** and **Import into scene** stay in the bottom action bar. Supported formats are available in an expandable list. Choose **Cancel** to stop loading without changing the scene.
+In **3D → Tools → 3D Models**, choose **Import Model…**. Use **Choose files** for a model and its companion files, or **Choose folder** to retain asset-folder paths. The left side contains the main-model selector, scale/orientation and hierarchy controls. Press **Read model** to inspect the larger preview on the right, with separate Width (X), Height (Y), Depth (Z), mesh and triangle readouts. **Cancel** and **Import into scene** stay in the bottom action bar. Supported formats are available in an expandable list. Cancelling the file or folder picker returns to this dialog, keeping any prepared preview and settings. You can then choose a different file or folder. The dialog’s **Cancel** or **×** button, or Escape while the dialog is active, closes the import without changing the scene.
 
 Before importing, inspect the preview and resulting dimensions. Set **Source units** to mm, cm or metres and select Y-up or Z-up. Formats with built-in unit conversion expose their decoded units in this dialog. Use the dimension readout to confirm the intended physical size. The source origin is retained.
 
@@ -794,7 +797,7 @@ Native-source status can report source resolution, displayed frame rate, convers
 
 ### 10.5 Floating Preview
 
-In **3D**, open **Output → Floating Preview** to create a camera-only preview. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
+In **3D**, open **Output → Floating Preview** to create a camera-only preview. This menu item is greyed out in Patterns and Pixel Map. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
 
 | Action | Control |
 | --- | --- |
@@ -803,15 +806,15 @@ In **3D**, open **Output → Floating Preview** to create a camera-only preview.
 | Pan the preview camera | Right-drag |
 | Zoom towards the cursor | Mouse wheel |
 | Resize the window | Drag the **bottom-right corner** only |
-| Close the preview | Small **top-right ×**, **Escape** while preview is focused, or toggle **Output → Floating Preview** off |
+| Close the preview | Small **top-right ×**, **Escape** while preview is focused, or toggle **Output → Floating Preview** off in 3D |
 
 **Pause the main viewport:** With Floating Preview open, choose **Output → Pause main viewport**. The editor shows a paused notice and **Resume viewport** button while the undocked preview keeps its camera and live updates. The pause applies to the main 3D view, including All Views; Pixel Map and Patterns remain editable. Closing Floating Preview automatically resumes the main view. This setting is temporary and is not saved in projects.
 
 Pausing stops main-viewport draws and suspends its repeated media/pattern texture updates when no native output needs them. Active NDI/Spout captures continue rendering their own frames. Scene resources remain allocated for quick resumption, so this reduces rendering work rather than releasing all GPU memory. A static viewport already renders on demand; the largest saving is with changing sources or test sequences.
 
-The Windows application opens a borderless window above other applications, without a bright outer outline. The top-left move handle, top-right close button and bottom-right resize handle remain visible. The localhost browser preview uses a floating panel inside the application page. Windows start at 640 × 360 and can be resized freely down to 240 × 160; the camera adapts to the window's aspect ratio without stretching models. Changing the window size does not change model dimensions or native stream resolution.
+The Windows application opens a borderless window above other applications, without a bright outer outline. The top-left move handle, top-right close button and bottom-right resize handle remain visible. Windows start at 640 × 360 and can be resized freely down to 240 × 160; the camera adapts to the window's aspect ratio without stretching models. Changing the window size does not change model dimensions or native stream resolution.
 
-**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Floating Preview can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map or Patterns keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. You can switch Floating Preview off from any workspace. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
+**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Floating Preview can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map or Patterns keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. The Floating Preview menu item is disabled in Patterns and Pixel Map. To close an existing preview from those workspaces, use its × button or Escape while it is focused, or choose Output → OFF. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
 
 ## 11. Exporting
 
@@ -872,35 +875,38 @@ Export may be blocked when a curved screen's extrusion depth is physically inval
 | `F4` | 3D Simulation | Switch to Front. |
 | `F5` | 3D Simulation | Switch to All Views (four-view layout). |
 | `S` | 3D Simulation | Over or focused in Scene Hierarchy: expand ancestors and reveal the selected row. Over the viewport: frame selection in the active view. Does nothing with no selection; text fields keep normal typing. |
-| `F` | 3D Simulation | Fit the entire visible scene in all views, regardless of selection. |
+| `F` | 3D Simulation | Fit the entire visible scene in all views and straighten the camera horizon, regardless of selection. |
 | `Ctrl+A` | Focused 3D viewport | Select all imported model roots when a model is selected; otherwise select all scene slices. Click the viewport or Tab to it first. |
 | `E` | 3D Simulation | Activate Move. |
 | `R` | 3D Simulation | Activate Rotate. |
 | `T` | 3D Simulation | Activate Scale. |
-| `Ctrl+G` | 3D Simulation | Group selected model parts within their import, or selected ungrouped slices. Disabled while typing or browsing menus/dialogs. |
+| `Ctrl+G` | 3D Simulation | Group selected editable model parts, groups and LED slices, including mixed selections. Disabled while typing or browsing menus/dialogs. |
 | `Delete` | 3D Simulation | Delete selected imported models/groups/parts only. Screens and Resolume slices are protected. Respects locks; inactive in fields and menus/dialogs. |
 | `Shift` while scaling | 3D viewport | Scale proportionally on all axes, preserving the initial proportions. |
 | `Shift` while rotating | 3D viewport | Snap interactive rotation to 5° increments. |
 | `Ctrl`-click | Pixel Map / hierarchy / 3D | Toggle an item in a multi-selection. |
-| `Shift`-click | Pixel Map / hierarchy / 3D | Add/remove slices, or select a hierarchy group range. |
+| `Shift`-click | Pixel Map / hierarchy / 3D | Select a range between hierarchy rows; in the viewport, extend or toggle the current selection. |
 | `Ctrl`-drag | 3D viewport | Add visible model items or screens inside a marquee, using the active selection type. |
 | `Space` + left-drag | 2D canvas | Pan the pattern or map. Does not activate while typing in an input. |
 | `Enter` | Numeric or group-name field | Commit the entered value or finish group renaming. |
 | `Escape` | Editable field | Cancel/revert supported field editing or finish group renaming without continuing the edit mode. |
+| `Tab` / `Shift+Tab` / arrow keys | Save or project-replacement prompt | Move focus between available actions. No action starts selected. |
+| `Enter` / `Space` | Save or project-replacement prompt | Activate the focused button. |
+| `Escape` | Save or project-replacement prompt | Cancel and keep the project open. |
 
-In browsers on macOS, use `Cmd` in place of `Ctrl`. The installed application is for Windows.
+These shortcuts describe the Windows application.
 
 The 3D letter shortcuts accept lowercase and uppercase. Letter and F1–F5 view shortcuts do not run while typing or editing a field, using a select control, or while a menu or dialog is open. Ctrl+A keeps normal text-selection behavior in fields and selects scene content only when the viewport has keyboard focus. Selecting all does not unlock or reveal hidden items; pivot and transform edits still respect locks.
 
-**Tip:** with the 3D workspace active and no field, menu, or dialog open, press F to fit the entire visible scene. Use S to focus selected objects; in All Views, hover the pane you want to focus before pressing S. F reframes all panes and keeps your selection.
+**Tip:** with the 3D workspace active and no field, menu, or dialog open, press F to fit the entire visible scene. Use S to focus selected objects; in All Views, hover the pane you want to focus before pressing S. F reframes all panes, straightens the horizon and keeps your selection.
 
 ### 12.2 Mouse controls
 
 | Control | 2D canvas | 3D viewport |
 |---|---|---|
-| Left click | Select slice or interact with controls | Select a screen or gizmo axis |
+| Left click | Select slice or interact with controls | Select a screen, imported model or gizmo axis |
 | Left drag | Marquee selection in Pixel Map | Orbit camera on empty space |
-| Middle drag | Pan | Browser/platform dependent; use right-drag for 3D pan |
+| Middle drag | Pan | Dolly (zoom) |
 | Right drag | Browser/platform dependent | Pan camera |
 | Mouse wheel | Zoom toward cursor | Zoom toward cursor |
 | Wheel over numeric field | Adjust value | Adjust value |
@@ -912,7 +918,7 @@ Press **F1** for Perspective, **F2** for Top, **F3** for Right, **F4** for Front
 
 Choose **All Views** in the 3D toolbar. The panes are Perspective (upper left), Top (upper right), Front (lower left), and Right (lower right).
 
-- Wheel zoom is anchored to the cursor inside the pane under the pointer. Each camera keeps its own pan and zoom. In Perspective, zoom distance follows the visible screen or model surface under the cursor, with finer movement close up. Navigation continues through empty space without stopping at an old orbit target. For detailed models, zoom distance uses object bounds to keep navigation responsive; the surface estimate may be less exact around openings or concave shapes. This does not change mesh detail or selection accuracy. Floor, grid and gizmos do not set the zoom distance.
+- Wheel zoom is anchored to the cursor inside the pane under the pointer. Each camera keeps its own pan and zoom. In Perspective, zoom distance follows the visible screen or model surface under the cursor, with finer movement close up. Navigation continues through empty space without stopping at an old orbit target. Openings and concave shapes allow zoom towards visible surfaces behind them. Moving between nearby and distant subjects keeps background surfaces and the floor/grid stable. Floor, grid and gizmos do not set the zoom distance.
 - Left-drag orbits Perspective. Left-drag pans the fixed-axis orthographic panes; right-drag pans any pane.
 - Select a screen and drag its Move, Rotate, or Scale gizmo in any pane. The same scene updates in all four views. Undo/redo applies to the shared edit.
 - Ctrl-drag marquee stays inside the pane where the drag began. Ctrl/Shift-click retains multi-selection behavior.

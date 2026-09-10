@@ -44,7 +44,7 @@ Build a physically scaled preview from your Resolume slices and add an imported 
 
 ## Floating Preview — keep a preview above your show software
 
-The Windows app can open an **always-on-top, camera-only preview** that stays live while you work elsewhere. Drag its top-left handle to position it and the bottom-right corner to resize it. Inside the preview, left-drag orbits, right-drag pans and the wheel zooms. You cannot accidentally edit objects there.
+In 3D mode, **Output → Floating Preview** opens an **always-on-top, camera-only preview** that stays live while you work elsewhere. Drag its top-left handle to position it and the bottom-right corner to resize it. Inside the preview, left-drag orbits, right-drag pans and the wheel zooms. You cannot accidentally edit objects there.
 
 The preview keeps its own camera while receiving scene, material, map-style and live-source updates. It stays open when you switch to Patterns or Pixel Map. **Pause main viewport** stops drawing the main 3D view while the preview continues.
 

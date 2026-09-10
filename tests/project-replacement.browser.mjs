@@ -10,12 +10,13 @@ try {
  const dialog=page.locator('.project-replacement-dialog');
  const menu=async(name)=>{await page.getByRole('button',{name:'File',exact:true}).click();await page.getByRole('button',{name,exact:true}).click();};
  const slices=()=>page.locator('.hierarchy-row.child').count();assert.equal(await slices(),6);
- await page.getByRole('button',{name:'Load Demo Scene',exact:true}).click();await dialog.waitFor({state:'visible'});
- assert.equal(await slices(),6);assert.equal(await dialog.getByRole('button',{name:'Cancel',exact:true}).evaluate(e=>document.activeElement===e),true);
+ await menu('Open Demo');await dialog.waitFor({state:'visible'});
+ assert.equal(await slices(),6);assert.equal(await dialog.locator('button:focus').count(),0);
  await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});assert.equal(await slices(),6);
  await menu('New Project');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await slices(),6);
  await menu('Open Demo');await dialog.waitFor({state:'visible'});await page.screenshot({path:'work/v080-local/project-replacement.png'});
  // Modal keyboard focus stays inside, and the action area fits smaller windows.
+ await page.keyboard.press('Tab');assert(await dialog.getByRole('button',{name:'Cancel',exact:true}).evaluate(e=>e===document.activeElement));
  await page.keyboard.press('Tab');assert(await dialog.getByRole('button',{name:'Continue without saving',exact:true}).evaluate(e=>e===document.activeElement));
  await page.keyboard.press('Tab');assert(await dialog.getByRole('button',{name:'Save and continue',exact:true}).evaluate(e=>e===document.activeElement));
  await page.keyboard.press('Tab');assert(await dialog.getByRole('button',{name:'Cancel',exact:true}).evaluate(e=>e===document.activeElement));
@@ -46,9 +47,9 @@ try {
  // Save As first establishes the named destination, without replacing the project.
  await menu('Save As…');await page.waitForFunction(()=>!!window.releaseSave);await page.evaluate(()=>window.releaseSave());await page.getByText('Project saved',{exact:true}).waitFor();
  await menu('New Project');await dialog.getByRole('button',{name:'Save and continue',exact:true}).click();await dialog.waitFor({state:'detached'});assert.equal(await page.evaluate(()=>window.overwrittenPath),'C:/Example/Stage.lo2s');assert((await page.evaluate(()=>window.savedProject.rawXml)).includes('Centre Wall'));assert.equal(await slices(),0);
- // Both map and 3D demo entry points require confirmation; explicit discard loads demo.
- await page.getByRole('button',{name:'Pixel Map',exact:true}).click();await page.getByRole('button',{name:'Load Demo Map',exact:true}).click();await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
- await page.getByRole('button',{name:'3D',exact:true}).click();await page.getByRole('button',{name:'Load Demo Scene',exact:true}).click();await dialog.getByRole('button',{name:'Save and continue',exact:true}).click();await page.waitForFunction(()=>window.saveCalls===4);assert.equal(await dialog.getByRole('button',{name:'Cancel',exact:true}).isDisabled(),true);await page.keyboard.press('Escape');assert.equal(await dialog.isVisible(),true);assert.equal(await slices(),0);await page.evaluate(()=>window.releaseSave());await dialog.waitFor({state:'detached'});assert.equal(await slices(),7);
+ // The File demo entry requires confirmation from both map and 3D; explicit discard loads demo.
+ await page.getByRole('button',{name:'Pixel Map',exact:true}).click();await menu('Open Demo');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.getByRole('button',{name:'3D',exact:true}).click();await menu('Open Demo');await dialog.getByRole('button',{name:'Save and continue',exact:true}).click();await page.waitForFunction(()=>window.saveCalls===4);assert.equal(await dialog.getByRole('button',{name:'Cancel',exact:true}).isDisabled(),true);await page.keyboard.press('Escape');assert.equal(await dialog.isVisible(),true);assert.equal(await slices(),0);await page.evaluate(()=>window.releaseSave());await dialog.waitFor({state:'detached'});assert.equal(await slices(),7);
  await menu('New Project');await dialog.getByRole('button',{name:'Continue without saving',exact:true}).click();await dialog.waitFor({state:'detached'});assert.equal(await slices(),0);
  assert.deepEqual(errors,[]);console.log('Project replacement: all entry points, cancel, Escape, save failures/cancellation, downloads, native save/overwrite, busy lock and explicit discard passed.');
 }finally{await browser.close();}
