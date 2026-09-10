@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/brand/opticmesh-icon.png" width="120" alt="LO2S - OpticMesh">
+  <img src="docs/images/opticmesh-banner.png" width="830" alt="LO2S - OpticMesh">
 </p>
 
 # LO2S - OpticMesh
