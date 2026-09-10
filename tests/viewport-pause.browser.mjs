@@ -26,14 +26,14 @@ try {
  const button=name=>page.getByRole('button',{name,exact:true});
  await loadRegressionScene(page,'3d');
  await button('Output').click(); assert(await button('Pause main viewport').isDisabled());
- await button('Windowed').click();
- const panel=page.getByRole('region',{name:'Windowed output',exact:true});
+ await button('Floating Preview').click();
+ const panel=page.getByRole('region',{name:'Floating Preview',exact:true});
  await panel.waitFor();
  const move=await panel.boundingBox();
  await page.mouse.move(move.x+12,move.y+12);await page.mouse.down();await page.mouse.move(move.x+762,move.y+12);await page.mouse.up();
  await button('Pixel Map').click();await button('Color Bars').click();await button('Run test sequence').click();await button('3D').click();
  const main=page.getByRole('region',{name:'3D viewport',exact:true}).locator('canvas');
- const preview=page.getByRole('region',{name:'Windowed 3D preview',exact:true}).locator('canvas');
+ const preview=page.getByRole('region',{name:'Floating Preview',exact:true}).locator('canvas');
  const draws=canvas=>canvas.evaluate(c=>({display:Number(c.dataset.displayDraws||0),offscreen:Number(c.dataset.offscreenDraws||0)}));
  await page.waitForTimeout(1600);
  await button('Output').click();await button('Pause main viewport').click();
@@ -58,7 +58,7 @@ try {
  await button('Output').click();await button('Pause main viewport').click();
  await button('Pixel Map').click();await button('Run test sequence').click();await button('3D').click();
  await page.getByText('Main viewport paused',{exact:true}).waitFor();
- await button('Close windowed output').click();await page.waitForTimeout(500);
+ await button('Close Floating Preview').click();await page.waitForTimeout(500);
  assert.equal(await page.getByText('Main viewport paused',{exact:true}).count(),0,'Closing preview automatically resumes editor');
  assert.equal(await page.getByRole('region',{name:'3D viewport',exact:true}).getAttribute('inert'),null);
  await button('Output').click();await button('OFF').click();

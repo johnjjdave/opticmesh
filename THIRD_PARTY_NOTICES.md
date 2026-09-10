@@ -23,3 +23,9 @@ The FBX importer includes a modified copy of Three.js 0.185.1 FBXLoader under th
 ## Reflection environments
 
 The three optimized HDRI reflection environments are derived from Greyscalegorilla Rio Bay Cloudy, Parking Lot Sunny and Ultimate Skies 4K 0014. Copyright remains with the respective rights holder; these assets are not covered by OpticMesh’s MIT License.
+
+## 3Dconnexion (Windows SpaceMouse navigation)
+
+3D input device development tools and related technology are provided under license from 3Dconnexion. © 3Dconnexion 1992 - 2025. All rights reserved.
+
+The Windows camera adapter is compiled against the separately obtained 3DxWare SDK. The SDK sources and headers are not distributed with OpticMesh. The navigation runtime is supplied by the user's installed 3DxWare driver and is not included in the installer. This technology is subject to 3Dconnexion's SDK license, not OpticMesh's MIT license.

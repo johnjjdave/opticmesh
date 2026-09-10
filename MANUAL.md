@@ -26,7 +26,7 @@ In the in-app Manual, choose a section in the left navigation to open its topic 
 16. [Projection formats and current limitations](#16-projection-formats-and-current-limitations)
 17. [Terminology](#17-terminology)
 
-[Windowed output controls](#105-windowed-output)
+[Floating Preview controls](#105-floating-preview)
 
 [Importing stage models](#stage-model-import-v080)
 
@@ -94,6 +94,8 @@ The current open-source Beta may trigger a Windows SmartScreen **Unknown publish
 ### 2.2 First launch
 
 At first launch, the app creates the `Documents\OpticMesh` workspace and starts a managed **Startup Project**. You can immediately work without naming or manually saving that project. The latest state is restored when the app is reopened.
+
+The Windows loading window stays visible while your project and its opening view are prepared. Larger stages may take longer to open. If startup fails, use **Retry** or close the loading window.
 
 Use **Open demo project** to learn the interface without preparing a Resolume file.
 
@@ -199,18 +201,21 @@ LO2S - OpticMesh distinguishes two concepts:
 
 Background autosave always writes to the managed startup/recovery files. It never silently overwrites a named project. A named project is overwritten only by an explicit save command.
 
+**Closing the Windows app:** If your work has not been saved to a project file, OpticMesh asks **Do you want to save your project?** Choose **Save As…** to create a named file, or **Save** to update the active file. **Cancel** or Escape keeps the project open. **Quit without saving** closes the app without saving your changes to a project file. If you choose to save, closing proceeds only after a successful save; cancelling the file dialog or a failed save keeps your work open. An unchanged saved project closes normally, and its saved-file destination is remembered on restart while the file remains available.
+
 ### 5.3 Project commands
 
 - **Save:** applies the correct Startup Project or named-project behaviour described above.
 - **Save project as…:** creates a named `.lo2s` file and makes it active for the session.
-- **Load project…:** opens an existing `.lo2s` project and makes that path active.
+- **Open Project…:** opens an existing `.lo2s` project and makes that path active.
+- **Open Recent:** shows the six most recently opened or saved projects in a submenu. The list is retained when you restart OpticMesh. Hover over a project name to see its full location. If a file has moved or been deleted, use Open Project to locate it again.
 - **New blank project:** resets the working state after applying a clean project model.
 - **Open demo project:** loads a sample scene for exploring the mapping and 3D tools.
 - **Reveal Projects folder:** opens `Documents\OpticMesh\Projects`.
 
-**File → Open Demo** and **3D → Load Demo Scene** open the sample project in 3D; **Pixel Map → Load Demo Map** opens it in Pixel Map. Loading the demo replaces the current working state and disconnects any linked XML file.
+**File → Open Demo** opens the sample project in 3D. Switch to Pixel Map to explore its mapping tools. Loading the demo replaces the current working state and disconnects any linked XML file.
 
-**Before replacing a project:** New Project and every demo command open a centred confirmation with **Cancel**, **Continue without saving**, and **Save and continue**. Cancel or Escape keeps the current project. Cancel is focused initially; Tab and Shift+Tab cycle between the available actions. Save and continue saves to the active named project, or opens Save As when a named destination is needed; replacement happens only after a successful save. A cancelled or failed save leaves the project and confirmation open. Controls are temporarily disabled while saving.
+**Before replacing a project:** New Project and Open Demo open a centred confirmation with **Cancel**, **Continue without saving**, and **Save and continue**. Open Project and Open Recent also show this confirmation when the current project has unsaved changes. Cancel or Escape keeps the current project. Cancel is focused initially; Tab and Shift+Tab cycle between the available actions. Save and continue saves to the active named project, or opens Save As when a named destination is needed; replacement happens only after a successful save. A cancelled or failed save leaves the project and confirmation open. Controls are temporarily disabled while saving.
 
 The confirmation also appears after autosave: startup recovery follows the current working project and is not a permanent named backup. Project replacement clears the scene Undo history, so Ctrl+Z cannot restore the preceding project after choosing to continue. In browsers that can only download files, verify the downloaded `.lo2s` file before explicitly choosing Continue without saving; requesting a download does not automatically replace the project.
 
@@ -325,7 +330,7 @@ The Pixel Map navigation button uses the outlined Resolume Arena A to identify t
 
 ### 7.1 Importing an Advanced Output XML
 
-Without a Resolume map, Pixel Map displays the transparency checkerboard with **Import a Resolume XML map** centred in the viewport. Use **Tools → Advanced Output XML → Choose XML…** or **Load Demo Map** to populate it. The standalone test pattern appears only in Patterns mode.
+Without a Resolume map, Pixel Map displays the transparency checkerboard with **Import a Resolume XML map** centred in the viewport. Use **Tools → Advanced Output XML → Choose XML…** or **File → Open Demo** to populate it. The standalone test pattern appears only in Patterns mode.
 
 Use one of two methods:
 
@@ -341,9 +346,9 @@ The linked workflow is available in the installed Windows application. Unlink th
 
 In v0.8.0, Output Map starts with the first available screen. Choose another screen under **Tools → Map Display → Screen**; switching to Input Map and back retains that choice. Input Map already includes all screens in the composition and needs no screen selector. Output Map displays one real screen at a time; use **Export → All Output Maps** to export every screen as a separate map.
 
-**Pattern scope in 3D:** **Across Map** uses the full input composition as one pattern; each LED screen shows the portion at its input-map position. **Per Slice** restarts the pattern on each screen. This scope is retained during the test sequence and in Windowed output for surfaces using the pattern source.
+**Pattern scope in 3D:** **Across Map** uses the full input composition as one pattern; each LED screen shows the portion at its input-map position. **Per Slice** restarts the pattern on each screen. This scope is retained during the test sequence and in Floating Preview for surfaces using the pattern source.
 
-**Tools → Pattern Fill → Run test sequence** cycles through Cabinet Checker, Metric Grid, Cabinet IDs, Color Bars, Grayscale and Pixel Check every three seconds, starting after the current fill and looping. It works with Input and Output maps and retains **Per Slice / Across Map** scope. Load a map to enable the toggle. Switch it off to keep the current fill for inspection or export. The sequence continues between Pixel Map and 3D without restarting its three-second interval. In 3D, LED surfaces using the pattern source show the changing fills; other assigned media retain their source. With Windowed output open, the map sequence also keeps running while editing in Patterns. Otherwise it pauses in Patterns and resumes on return to Pixel Map or 3D if still enabled. Turn it off in Pixel Map; its toggle is independent of the Patterns sequence. It changes the map's global fill, not its geometry or slice selection.
+**Tools → Pattern Fill → Run test sequence** cycles through Cabinet Checker, Metric Grid, Cabinet IDs, Color Bars, Grayscale and Pixel Check every three seconds, starting after the current fill and looping. It works with Input and Output maps and retains **Per Slice / Across Map** scope. Load a map to enable the toggle. Switch it off to keep the current fill for inspection or export. The sequence continues between Pixel Map and 3D without restarting its three-second interval. In 3D, LED surfaces using the pattern source show the changing fills; other assigned media retain their source. With Floating Preview open, the map sequence also keeps running while editing in Patterns. Otherwise it pauses in Patterns and resumes on return to Pixel Map or 3D if still enabled. Turn it off in Pixel Map; its toggle is independent of the Patterns sequence. It changes the map's global fill, not its geometry or slice selection.
 
 ### 7.3 Pixel pitch and physical scale
 
@@ -433,7 +438,7 @@ The outline around the whole 3D viewport is a **keyboard-focus indicator**, sepa
 | Orbit camera | Left-drag empty viewport space |
 | Pan camera | Right-drag |
 | Zoom toward pointer | Mouse wheel |
-| Fit all scene objects | **Fit scene** |
+| Fit all scene objects and straighten the horizon | **Fit Scene** or `F` over the viewport |
 | Frame selection | **Focus** above the viewport, or `S` over the viewport |
 | Reveal selection in the list | **Focus** in the hierarchy actions, or `S` while hovering or focused in Scene Hierarchy |
 | Select object | Click a screen |
@@ -442,7 +447,7 @@ The outline around the whole 3D viewport is a **keyboard-focus indicator**, sepa
 
 Camera state is saved with the project.
 
-Selected imported models and parts show a thin, muted silhouette around their visible selection. Internal polygon edges and seams between touching selected parts are not highlighted, so materials remain readable while editing. Selecting a group outlines the combined visible shape of its mesh descendants. The highlight follows transforms and clears when deselected, hidden or removed. These editing highlights are excluded from Windowed output, NDI/Spout output and scene exports.
+Selected imported models and parts show a thin, muted silhouette around their visible selection. Internal polygon edges and seams between touching selected parts are not highlighted, so materials remain readable while editing. Selecting a group outlines the combined visible shape of its mesh descendants. The highlight follows transforms and clears when deselected, hidden or removed. These editing highlights are excluded from Floating Preview, NDI/Spout output and scene exports.
 
 Selected items have a highlighted, bold hierarchy row. Ancestor groups show a subtler highlight and bold name, including when collapsed, so you can trace the selection without selecting those groups. To find a selected item, hover over Scene Hierarchy and press **S**, or click its **Focus** button. This clears the hierarchy search, expands the selected paths and scrolls to the selected row; with multiple items selected, it reveals the last selected model item, group or slice in that order. Camera framing stays unchanged. Press **S** over the viewport to frame the selection instead. Search and rename fields keep S as text.
 
@@ -531,6 +536,16 @@ Floor, grid, camera, and gizmos are viewport aids and are excluded from 3D scene
 The 3D workflow keeps up to 100 history steps. A completed gizmo drag is treated as one history operation. Undo and Redo are available in the top bar and through keyboard shortcuts.
 
 ---
+
+Hidden visibility and locked controls use the same highlighted treatment; normal visible and unlocked controls stay muted. The crossed-out eye and closed padlock identify their active states, and the open padlock indicates an unlocked item.
+
+### SpaceMouse navigation (Windows)
+
+With 3Dconnexion 3DxWare installed and a SpaceMouse connected, use the main 3D viewport to pan, zoom and orbit with the device. The regular mouse remains available for navigation, selection and editing. Select a model, group or LED slice to keep its centre as the rotation reference in Object mode. Clearing the selection restores automatic rotation-centre behaviour. SpaceMouse navigation changes the camera only; it does not move or rotate scene objects. In Top, Front and Right views, SpaceMouse pans and zooms without rotating the view. In All Views, move the pointer over the pane you want to navigate.
+
+SpaceMouse navigation stops while the main viewport is paused, another workspace or application is active, or a dialog or text field has focus. It is not enabled in Floating Preview or the hosted web app. Open **Tools → 3Dconnexion Settings…** in the Windows 3D workspace to adjust device sensitivity, axis direction and navigation preferences.
+
+3D input device development tools and related technology are provided under license from 3Dconnexion. © 3Dconnexion 1992 - 2025. All rights reserved.
 
 ## 9. Scene hierarchy and grouping
 
@@ -665,13 +680,13 @@ Drag a model part, imported root or group onto a group to change its parent. Dro
 
 Double-click an imported item or group name to rename it. **Enter** or clicking outside commits the name; **Escape** cancels. Blank names are ignored. Rename, grouping and parenting support Undo/Redo and project saving. A mixed group moves, rotates and scales its LED slices and imported geometry together; the Coordinates fields update while dragging. Its pivot uses their combined bounds. Group visibility and locks apply to both kinds of content. **Delete** or **Remove selected groups** removes the selected editable group branch and its removable imported contents. Resolume slices return to their original screen containers with their current position, rotation and scale preserved; their XML links and IDs remain intact. Directly selected Resolume slices cannot be deleted. GLB/glTF retain shared group parents; mesh-only export formats retain world placement.
 
-Model visibility and locks appear in the hierarchy. Remove selected model items from their inspector. Import, edits, grouping and removal support Undo/Redo. All Views, Windowed output and 3D streaming display imported geometry; the Windowed preview remains camera-only.
+Model visibility and locks appear in the hierarchy. Remove selected model items from their inspector. Import, edits, grouping and removal support Undo/Redo. All Views, Floating Preview and 3D streaming display imported geometry; the Floating Preview remains camera-only.
 
 Deleting the last selected model item clears the viewport gizmo immediately.
 
 Removing a model-only group removes its imported descendants. Locked items and groups containing locked descendants are protected. Undo restores removed items and their geometry.
 
-In 3D mode, **Delete** removes selected imported models, groups or parts. It never deletes screens or Resolume slices. The shortcut is inactive while editing a field, using a menu/dialog, or interacting with the camera-only Windowed preview. Use **Ctrl+Z** to undo removal.
+In 3D mode, **Delete** removes selected imported models, groups or parts. It never deletes screens or Resolume slices. The shortcut is inactive while editing a field, using a menu/dialog, or interacting with the camera-only Floating Preview. Use **Ctrl+Z** to undo removal.
 
 ### Imported-model storage and limits
 
@@ -687,7 +702,7 @@ A slice inherits the closest parent-group material/display unless overridden. In
 
 The reflection environment is a viewport aid and is not bundled with scene exports. Receiving applications supply their own reflection environment. Projects containing extrusion material overrides use schema 4 and require v0.8.0 Beta or later.
 
-In **Scene Display**, choose **HDRI1**, **HDRI2** or **HDRI3** to compare reflection looks. The three buttons appear side by side in both the left Tools panel and the Scene inspector; either row changes the same setting. The chosen look also updates Windowed output, is saved with the project, and supports Undo/Redo. New projects start with **HDRI1**. **Tip:** lower Roughness to reveal reflection detail, or raise it for a softer surface. These fixed environments affect shaded imported models and LED extrusions; they do not change the background, floor, wireframes or LED display content, and do not reflect live imagery or moving scene objects. The HDRI files are not embedded in projects or scene exports.
+In **Scene Display**, choose **HDRI1**, **HDRI2** or **HDRI3** to compare reflection looks. The three buttons appear side by side in both the left Tools panel and the Scene inspector; either row changes the same setting. The chosen look also updates Floating Preview, is saved with the project, and supports Undo/Redo. New projects start with **HDRI1**. **Tip:** lower Roughness to reveal reflection detail, or raise it for a softer surface. These fixed environments affect shaded imported models and LED extrusions; they do not change the background, floor, wireframes or LED display content, and do not reflect live imagery or moving scene objects. The HDRI files are not embedded in projects or scene exports.
 
 ### Imported-model transform reset
 
@@ -765,7 +780,7 @@ Open **Performance** below the viewport for live measurements. The panel contain
 
 Hover a reading to see its scope and thresholds. UI FPS uses fixed responsiveness thresholds, not a detected display-refresh target. Colours indicate current load or reduced responsiveness, not a prediction of a crash. Idle, paused, missing and stale readings stay neutral; private app-memory bytes and draw statistics have no percentage rating.
 
-If drawing is heavy, hide unnecessary models or pause the main viewport while using Windowed output. For memory pressure, close unused applications or reduce scene complexity; hiding a model does not release its loaded memory.
+If drawing is heavy, hide unnecessary models or pause the main viewport while using Floating Preview. For memory pressure, close unused applications or reduce scene complexity; hiding a model does not release its loaded memory.
 
 **Navigation and selection:** Click a mesh to select it. Dragging to orbit or pan preserves the current selection; selecting a mesh is resolved when the click is released. Gizmo dragging and marquee selection keep their dedicated behavior.
 
@@ -777,9 +792,9 @@ Native-source status can report source resolution, displayed frame rate, convers
 
 ---
 
-### 10.5 Windowed output
+### 10.5 Floating Preview
 
-In **3D**, open **Output → Windowed** to create a camera-only preview. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
+In **3D**, open **Output → Floating Preview** to create a camera-only preview. It starts from the editor's current perspective camera and then navigates independently. Scene geometry, visibility, source textures, floor, grid, and background continue to update from the editor. Objects cannot be selected, moved, rotated, scaled, grouped, or deleted in this preview.
 
 | Action | Control |
 | --- | --- |
@@ -788,15 +803,15 @@ In **3D**, open **Output → Windowed** to create a camera-only preview. It star
 | Pan the preview camera | Right-drag |
 | Zoom towards the cursor | Mouse wheel |
 | Resize the window | Drag the **bottom-right corner** only |
-| Close the preview | Small **top-right ×**, **Escape** while preview is focused, or toggle **Output → Windowed** off |
+| Close the preview | Small **top-right ×**, **Escape** while preview is focused, or toggle **Output → Floating Preview** off |
 
-**Pause the main viewport:** With Windowed output open, choose **Output → Pause main viewport**. The editor shows a paused notice and **Resume viewport** button while the undocked preview keeps its camera and live updates. The pause applies to the main 3D view, including All Views; Pixel Map and Patterns remain editable. Closing Windowed output automatically resumes the main view. This setting is temporary and is not saved in projects.
+**Pause the main viewport:** With Floating Preview open, choose **Output → Pause main viewport**. The editor shows a paused notice and **Resume viewport** button while the undocked preview keeps its camera and live updates. The pause applies to the main 3D view, including All Views; Pixel Map and Patterns remain editable. Closing Floating Preview automatically resumes the main view. This setting is temporary and is not saved in projects.
 
 Pausing stops main-viewport draws and suspends its repeated media/pattern texture updates when no native output needs them. Active NDI/Spout captures continue rendering their own frames. Scene resources remain allocated for quick resumption, so this reduces rendering work rather than releasing all GPU memory. A static viewport already renders on demand; the largest saving is with changing sources or test sequences.
 
 The Windows application opens a borderless window above other applications, without a bright outer outline. The top-left move handle, top-right close button and bottom-right resize handle remain visible. The localhost browser preview uses a floating panel inside the application page. Windows start at 640 × 360 and can be resized freely down to 240 × 160; the camera adapts to the window's aspect ratio without stretching models. Changing the window size does not change model dimensions or native stream resolution.
 
-**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Windowed output can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map or Patterns keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. You can switch Windowed output off from any workspace. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
+**Tips:** Use the move handle to position the window, then drag inside the preview to choose the camera angle. Make scene edits in the main editor and watch them update in the preview. Floating Preview can remain open alongside NDI or Spout; its camera does not change their editor-camera view. Closing the preview leaves native streaming running. **Output → OFF** stops both. Switching to Pixel Map or Patterns keeps the preview open with its camera, position and size intact, so map style and logo edits can be previewed live. You can switch Floating Preview off from any workspace. Closing or reloading the editor also closes the preview. Reopening starts from the editor's perspective camera again; window placement and the preview camera are temporary and are not saved in the project.
 
 ## 11. Exporting
 
@@ -906,9 +921,9 @@ Choose **All Views** in the 3D toolbar. The panes are Perspective (upper left), 
 
 ---
 
-### 12.4 Windowed output controls
+### 12.4 Floating Preview controls
 
-Windowed output is a camera-only preview in v0.8.0 Beta. Its controls are separate from the editor's object tools.
+Floating Preview is a camera-only preview in v0.8.0 Beta. Its controls are separate from the editor's object tools.
 
 | Control | Action |
 | --- | --- |

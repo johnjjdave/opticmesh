@@ -13,7 +13,7 @@ const paths: Record<string,string> = {
  parent:"M4 4h6v6H4zM14 14h6v6h-6zM7 10v7h7", screen:"M3 5h18v12H3zM8 21h8M12 17v4",
  slice:"M12 3L3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
  eye:"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6", hidden:"M3 3l18 18M9 5a12 12 0 0 1 3 0c6 0 10 7 10 7a20 20 0 0 1-4 4M6 6a20 20 0 0 0-4 6s4 7 10 7a12 12 0 0 0 4-1",
- lock:"M5 10h14v11H5zM8 10V6a4 4 0 0 1 8 0v4", unlock:"M5 10h14v11H5zM8 10V6a4 4 0 0 1 8 0",
+ lock:"M5 10h14v11H5zM8 10V6a4 4 0 0 1 8 0v4", unlock:"M5 10h14v11H5zM13 10V6a4 4 0 0 1 8 0v2",
  up:"M6 15l6-6 6 6", down:"M6 9l6 6 6-6", right:"M9 6l6 6-6 6", close:"M6 6l12 12M6 18L18 6", fullscreen:"M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6",
  search:"M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14M15 15l6 6", book:"M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1v15",
  circle:"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18", diagonal:"M4 4h16v16H4zM4 4l16 16M20 4L4 20", safe:"M3 3h18v18H3zM7 7h10v10H7z", text:"M4 5h16M12 5v15M8 20h8", image:"M3 3h18v18H3zM3 17l6-6 4 4 3-3 5 5M16 7h.01", chart:"M4 20V4M4 20h16M8 16V9M13 16V6M18 16v-4",

@@ -38,10 +38,11 @@ Build a physically scaled preview from your Resolume slices and add an imported 
 - **LED geometry:** physical pixel pitch, extrusion and curved screen surfaces.
 - **Materials:** diffuse colour/intensity, metallic, roughness, specular, wireframe display and three hidden HDRI reflection looks. LED extrusion materials remain independent of display content.
 - **Camera views:** Perspective, Top, Right, Front and four-pane All Views, with Fit Scene and Focus Selection. Camera positions are retained when switching workspaces.
+- **3Dconnexion SpaceMouse:** navigate the main 3D viewport alongside the regular mouse. Object mode uses the selected model, group or slice as its rotation reference. Requires the 3DxWare Windows driver.
 - **Live sources:** patterns, video devices, NDI and Spout, with scene-wide or per-slice routing. Native NDI/Spout I/O requires Windows.
 - **Scene exports:** GLB, glTF, OBJ, MVR mesh packages, STL and USDZ. Preservation of hierarchy, materials and units depends on the format.
 
-## Windowed output — keep a preview above your show software
+## Floating Preview — keep a preview above your show software
 
 The Windows app can open an **always-on-top, camera-only preview** that stays live while you work elsewhere. Drag its top-left handle to position it and the bottom-right corner to resize it. Inside the preview, left-drag orbits, right-drag pans and the wheel zooms. You cannot accidentally edit objects there.
 
@@ -51,7 +52,7 @@ The preview keeps its own camera while receiving scene, material, map-style and 
 
 Save your work in a **`.lo2s` project**, including imported model geometry. **File → Compile Project** collects the project, Resolume XML and input/output PNG maps into a named folder.
 
-The Windows app maintains startup and recovery saves. It asks before replacing your work with a new or demo project. Projects reopen on Pattern Generator so you can reconnect live inputs deliberately.
+The Windows app maintains startup and recovery saves. Use **File → Open Recent** to reopen one of your six most recently used projects. OpticMesh asks before replacing unsaved work and offers **Save**, **Quit without saving**, or **Cancel** when closing. Projects reopen on Pattern Generator so you can reconnect live inputs deliberately.
 
 **Performance** distinguishes interface FPS, viewport redraws and scene/drawn triangle counts. The Windows app adds CPU and memory readings, with GPU/VRAM telemetry on supported NVIDIA systems. Load colours help identify pressure; see the manual for each reading's scope.
 
@@ -67,12 +68,14 @@ Open **Guide** or **Help → OpticMesh Manual** for the searchable, illustrated 
 
 ## Windows and web availability
 
+Development from v0.8.0 onward focuses on Windows. The hosted web app remains at v0.7.0; it will not receive the new desktop features.
+
 | Capability | Windows v0.8.0 Beta | Hosted web v0.7.0 |
 | --- | --- | --- |
 | Patterns, Resolume maps and LED scene layout | Yes | Yes |
 | Imported stage models and material controls | Yes | Not in the hosted stable release |
 | NDI / Spout input and output | Yes | No |
-| Always-on-top Windowed output | Yes | No |
+| Always-on-top Floating Preview | Yes | No |
 | Managed startup and recovery saves | Yes | No — save projects manually |
 
 The Windows x64 installer includes the official NDI Runtime prerequisite when a compatible runtime is absent; NDI Tools is not required. The installer is unsigned. Windows may show an unknown-publisher prompt; use the official release and its `SHA256SUMS.txt` to verify your download.

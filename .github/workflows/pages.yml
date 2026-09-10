@@ -37,7 +37,7 @@ jobs:
           pnpm exec vite build --config desktop/vite.config.ts
 
       - name: Check out deployment storage
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
           ref: codex/web-assets
@@ -45,28 +45,28 @@ jobs:
           persist-credentials: false
 
       - name: Verify and unpack published web application
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          tag=v0.7.0 # Final supported web release; desktop updates never advance the website.
           commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
           node scripts/web-release-storage.mjs verify .web-assets "$tag" "$commit"
           mkdir -p .pages/site
           unzip -q ".web-assets/releases/$tag/opticmesh-web-${tag#v}.zip" -d .pages/site
 
       - name: Configure GitHub Pages
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/configure-pages@v5
 
       - name: Upload website
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./.pages/site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

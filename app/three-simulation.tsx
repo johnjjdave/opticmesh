@@ -8,6 +8,8 @@ import { applyBodyMaterial, createModelMaterial, ModelLayer, descendants, inheri
 import * as THREE from "three";
 import { pivotOffset, pivotKey, type SlicePivot } from "./slice-pivot";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { resetNavigationHorizon, restoreNavigationUp, savedNavigationUp } from "./camera-orientation";
+import { createSpaceMouseControls, type SpaceMouseBridge } from "./spacemouse-controls";
 import { createViewportControls } from "./viewport-controls";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { createGpuTimer, RenderPerformance } from "./render-performance";
@@ -19,7 +21,7 @@ type Point = { x: number; y: number };
 type Rect = { x: number; y: number; width: number; height: number; points: Point[] };
 export type SimulationSlice = { id: string; name: string; screenName: string; input: Rect; output: Rect; warped: boolean; paletteIndex: number };
 export type SliceTransform = { position: [number, number, number]; rotation: [number, number, number]; scale?: [number, number, number] };
-type CameraPose = { position: [number, number, number]; target: [number, number, number] };
+type CameraPose = { up?: [number, number, number]; position: [number, number, number]; target: [number, number, number] };
 export type CameraState = CameraPose & { orthographic?: Partial<Record<"top" | "right" | "front", CameraPose & { zoom: number; halfHeight: number }>> };
 export type TransformMode = "translate" | "rotate" | "scale";
 export type SimulationSource = "pattern" | "video" | "ndi" | "spout";
@@ -30,6 +32,7 @@ export type SimulationOutputFrame = { width: number; height: number; data: Array
 export type SimulationOutputCapture = () => Promise<SimulationOutputFrame>;
 
 export type SimulationProps = {
+  onSceneReady?: () => void;
   transferActive?:boolean;
   onTransferTarget?:(target:{kind:"slice"|"model";id:string})=>void;
   previewOnly?: boolean;
@@ -226,6 +229,7 @@ export default function ThreeSimulation(props: SimulationProps) {
     refreshMedia: () => void;
     updateClipping: () => void;
     updateTopology: () => void;
+    updateNavigationSelection: () => void;
     controls: OrbitControls;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
@@ -335,10 +339,19 @@ export default function ThreeSimulation(props: SimulationProps) {
     let activeView = views[0];
     if (props.previewOnly) views.forEach(({ transform }) => { transform.enabled = false; });
     views.forEach((view) => view.surface.addEventListener("pointerenter", () => { if (!views.some((item) => item.transform.dragging)) activeView = view; }));
+    let spaceMouse: ReturnType<typeof createSpaceMouseControls> | undefined;
+    const navigationBounds = new THREE.Box3(), navigationSelection = new THREE.Box3();
+    const updateNavigationSelection = () => {
+      navigationSelection.makeEmpty();
+      latestRef.current.selectedIds.forEach(id => { const mesh=meshes.get(id); if(mesh?.visible) navigationSelection.expandByObject(mesh); });
+      if(latestRef.current.modelSelection?.length) navigationSelection.union(modelLayer.bounds(latestRef.current.modelSelection));
+      spaceMouse?.sync();
+    };
     const updateCameraClipping = () => {
       const bounds = new THREE.Box3();
       meshes.forEach((mesh) => bounds.expandByObject(mesh));
       bounds.union(modelLayer.bounds());
+      navigationBounds.copy(bounds);
       const sphere = bounds.isEmpty() ? new THREE.Sphere(controls.target.clone(), 1) : bounds.getBoundingSphere(new THREE.Sphere());
       views.forEach(({ camera, controls }) => {
         const sceneDistance = camera.position.distanceTo(sphere.center);
@@ -349,8 +362,19 @@ export default function ThreeSimulation(props: SimulationProps) {
         camera.far = Math.max(500, targetDistance * 10, sceneDistance + sphere.radius * 4 + 50);
         camera.updateProjectionMatrix();
         });
+      spaceMouse?.sync();
     };
+    let pendingFit = false;
+    const pendingFrames = new Map<View, THREE.Box3 | undefined>();
+    const hasLayout = () => host.clientWidth > 0 && host.clientHeight > 0;
     const fit = () => {
+      resetNavigationHorizon(camera, controls.target);
+      // Import commands can arrive while this retained workspace is hidden.
+      // Wait for real dimensions instead of fitting against a zero-width pane.
+      if (!hasLayout()) { pendingFit = true; pendingFrames.clear(); return; }
+      pendingFit = false;
+      pendingFrames.clear();
+      layoutViews();
       // Once geometry exists, fit its current world bounds, including moved screens.
       if (meshes.size || modelLayer.meshes.size) {
         views.forEach((view) => frameView(view));
@@ -367,11 +391,14 @@ export default function ThreeSimulation(props: SimulationProps) {
       controls.update();
     };
     const frameView = (view: View, bounds?: THREE.Box3) => {
+      if (!hasLayout()) { pendingFrames.set(view, bounds?.clone()); return; }
       const box = bounds || new THREE.Box3();
       if (!bounds) { meshes.forEach((mesh) => { if (mesh.visible) box.expandByObject(mesh); }); box.union(modelLayer.bounds()); }
       const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(0, 0.5, 0), 1) : box.getBoundingSphere(new THREE.Sphere());
       const viewCamera = view.camera;
       const direction = view.name === "top" ? new THREE.Vector3(0, 1, 0) : view.name === "right" ? new THREE.Vector3(1, 0, 0) : view.name === "front" ? new THREE.Vector3(0, 0, 1) : viewCamera.position.clone().sub(view.controls.target).normalize();
+      // A first mount with no layout may not yet have seeded a camera direction.
+      if (direction.lengthSq() === 0) direction.set(0.8, 0.36, 1.25).normalize();
       const aspect = Math.max(0.01, (view.surface.clientWidth || host.clientWidth) / Math.max(1, view.surface.clientHeight || host.clientHeight));
       let distance = Math.max(1, sphere.radius * 3);
       if (viewCamera instanceof THREE.OrthographicCamera) {
@@ -393,6 +420,7 @@ export default function ThreeSimulation(props: SimulationProps) {
       updateCameraClipping();
     };
     const layoutViews = () => {
+      if (!hasLayout()) return;
       const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
       const four = latestRef.current.viewMode === "four";
       views.forEach((view, index) => {
@@ -463,6 +491,7 @@ export default function ThreeSimulation(props: SimulationProps) {
     if (initialCamera.current) {
       camera.position.fromArray(initialCamera.current.position);
       controls.target.fromArray(initialCamera.current.target);
+      restoreNavigationUp(camera, controls.target, initialCamera.current.up);
       for(const view of views){
         if(view.name!=="perspective" && view.camera instanceof THREE.OrthographicCamera){
           const saved=initialCamera.current.orthographic?.[view.name];
@@ -476,7 +505,7 @@ export default function ThreeSimulation(props: SimulationProps) {
       }
     } else fit();
     layoutViews();
-    const snapshotCamera=():CameraState=>({position:tuple(camera.position),target:tuple(controls.target),orthographic:Object.fromEntries(views.filter(view=>view.name!=="perspective"&&view.initialized).map(view=>[view.name,{position:tuple(view.camera.position),target:tuple(view.controls.target),zoom:view.camera.zoom,halfHeight:(view.camera as THREE.OrthographicCamera).top}]))});
+    const snapshotCamera=():CameraState=>({position:tuple(camera.position),target:tuple(controls.target),up:tuple(savedNavigationUp(camera)),orthographic:Object.fromEntries(views.filter(view=>view.name!=="perspective"&&view.initialized).map(view=>[view.name,{position:tuple(view.camera.position),target:tuple(view.controls.target),zoom:view.camera.zoom,halfHeight:(view.camera as THREE.OrthographicCamera).top}]))});
     const rememberCamera=()=>{const state=snapshotCamera();if(props.cameraMemory)props.cameraMemory.current=state;return state;};
     const publishCamera=()=>latestRef.current.onCameraChange(rememberCamera());
     let cameraSaveTimer:ReturnType<typeof setTimeout>|undefined;
@@ -487,7 +516,8 @@ export default function ThreeSimulation(props: SimulationProps) {
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     const render = () => {
-      if (latestRef.current.renderPaused) return;
+      if (latestRef.current.renderPaused) { spaceMouse?.deactivate(); return; }
+      spaceMouse?.tick();
       frame = requestAnimationFrame(render);
       gpuTimer.poll();
       views.forEach((view) => { if (view.controls.enabled && view.controls.update()) dirty = true; });
@@ -503,6 +533,12 @@ export default function ThreeSimulation(props: SimulationProps) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
       renderer.setSize(width, height, false);
       layoutViews();
+      const framingPending = pendingFit || pendingFrames.size > 0;
+      const frames = [...pendingFrames];
+      pendingFrames.clear();
+      if (pendingFit) fit();
+      frames.forEach(([view, bounds]) => frameView(view, bounds));
+      if (framingPending) publishCamera();
       dirty = true;
     };
     const observer = new ResizeObserver(resize);
@@ -521,6 +557,8 @@ export default function ThreeSimulation(props: SimulationProps) {
     // together so scrolling cannot trigger a project update/save per wheel tick.
     const finishCameraGesture=()=>{if(cameraSaveTimer)clearTimeout(cameraSaveTimer);cameraSaveTimer=setTimeout(publishCamera,150);};
     views.forEach(view=>view.controls.addEventListener("end",finishCameraGesture));
+    const deviceBridge = (window as Window & { lo2sDesktop?: { spaceMouse?: SpaceMouseBridge } }).lo2sDesktop?.spaceMouse;
+    if (deviceBridge && !props.previewOnly) spaceMouse = createSpaceMouseControls(deviceBridge,host,()=>activeView,()=>navigationBounds,()=>!latestRef.current.previewOnly && !latestRef.current.renderPaused && !views.some(view=>view.transform.dragging),invalidate,()=>navigationSelection);
 
     type PickViewport = { camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; left: number; top: number; width: number; height: number };
     let pointerStart: { x: number; y: number } | null = null, marqueeStart: { x: number; y: number } | null = null, marqueeViewport: PickViewport | null = null, marqueeMoved = false;
@@ -801,11 +839,12 @@ export default function ThreeSimulation(props: SimulationProps) {
       }
     };
     props.onOutputCaptureReady?.(captureOutput);
-    runtimeRef.current = { fit:()=>{fit();publishCamera();}, focusSelection:()=>{focusSelection();publishCamera();}, setView:mode=>{setView(mode);rememberCamera();}, render: renderScene, refreshRendering, refreshMedia: () => {}, updateClipping: updateCameraClipping, updateTopology, controls, camera, renderer, transforms: views.map((view) => view.transform), proxy, meshes, patternTextures, scene, modelLayer, studio, grid, floor, externalTextures: {} };
+    runtimeRef.current = { fit:()=>{fit();publishCamera();}, focusSelection:()=>{focusSelection();publishCamera();}, setView:mode=>{setView(mode);rememberCamera();}, render: renderScene, refreshRendering, refreshMedia: () => {}, updateClipping: updateCameraClipping, updateTopology, updateNavigationSelection, controls, camera, renderer, transforms: views.map((view) => view.transform), proxy, meshes, patternTextures, scene, modelLayer, studio, grid, floor, externalTextures: {} };
     return () => {
       if(cameraSaveTimer)clearTimeout(cameraSaveTimer);
       if(transformPreviewTimer)clearTimeout(transformPreviewTimer);
       disposed = true;
+      spaceMouse?.dispose();
       cancelAnimationFrame(frame);
       gpuTimer.dispose();
       renderer.domElement.removeEventListener("webglcontextrestored", restoreGpuTimer);
@@ -1019,11 +1058,16 @@ export default function ThreeSimulation(props: SimulationProps) {
 
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.meshes.forEach((mesh, id) => { mesh.visible = props.visibleIds.includes(id); }); runtime.render(); }, [props.visibleIds]);
 
+  useEffect(() => { runtimeRef.current?.updateNavigationSelection(); }, [props.selectedIds, props.modelSelection, props.models, props.transforms, props.visibleIds]);
+
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transforms.forEach((transform) => transform.setMode(props.transformMode)); runtime.render(); }, [props.transformMode]);
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transforms.forEach((transform) => transform.setSpace(props.transformSpace)); const selected = props.selectedIds.filter((id) => !props.lockedIds.includes(id) && props.visibleIds.includes(id)).map((id) => runtime.meshes.get(id)).filter(Boolean) as SliceObject[]; if (props.modelSelection?.length) return; if (props.selectionTransform) runtime.proxy.quaternion.setFromEuler(new THREE.Euler(...props.selectionTransform.rotation, "XYZ")); else if (selected.length && props.transformSpace === "local") runtime.proxy.quaternion.copy(selected[selected.length - 1].quaternion); else runtime.proxy.rotation.set(0, 0, 0); runtime.render(); }, [props.transformSpace, props.selectedIds, props.lockedIds, props.visibleIds, props.transforms, props.pivotBySlice, props.selectionTransform]);
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.grid.visible = props.gridVisible; if (runtime.floor) runtime.floor.visible = props.floorVisible; const level = THREE.MathUtils.clamp(props.backgroundLevel / 100, 0, 2), base = new THREE.Color(0x090b0c), floorColor = new THREE.Color(0x111518); base.multiplyScalar(level); floorColor.multiplyScalar(level); runtime.scene.background = base; if (runtime.floor) runtime.floor.material.color.copy(floorColor); runtime.render(); }, [props.gridVisible, props.floorVisible, props.backgroundLevel]);
   useEffect(() => { void runtimeRef.current?.studio.target.select(props.reflectionPreset || 1); }, [props.reflectionPreset]);
 
+  // On a first visit without a saved camera, frame the populated scene, after
+  // both slice and imported-model effects have installed their geometry.
+  useEffect(() => { if (!initialCamera.current) runtimeRef.current?.fit(); }, []);
   useEffect(() => { if (props.fitSignal!==lastFitSignal.current) { lastFitSignal.current=props.fitSignal;if(props.fitSignal)runtimeRef.current?.fit(); } }, [props.fitSignal]);
   useEffect(() => { if (props.focusSignal!==lastFocusSignal.current) { lastFocusSignal.current=props.focusSignal;if(props.focusSignal)runtimeRef.current?.focusSelection(); } }, [props.focusSignal]);
   useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.setView(props.viewMode); runtime.render(); }, [props.viewMode]);
@@ -1033,9 +1077,26 @@ export default function ThreeSimulation(props: SimulationProps) {
     runtimeRef.current?.refreshMedia();
   }, [props.renderPaused, props.outputActive]);
 
+  useEffect(() => {
+    if (!props.onSceneReady) return;
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    let cancelled = false, frame = 0;
+    const prepare = () => {
+      if (cancelled) return;
+      if (runtime.renderer.getContext().isContextLost()) return;
+      if (!mountRef.current?.clientWidth || !mountRef.current.clientHeight || latestRef.current.renderPaused) { frame = requestAnimationFrame(prepare); return; }
+      runtime.render();
+      // Let the first fully populated frame reach presentation before revealing.
+      frame = requestAnimationFrame(() => { if (!cancelled) props.onSceneReady?.(); });
+    };
+    void runtime.studio.target.ready.then(() => { if (!cancelled) frame = requestAnimationFrame(prepare); });
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [props.onSceneReady]);
+
   useEffect(()=>{const runtime=runtimeRef.current;if(!runtime)return;runtime.transforms.forEach(transform=>{transform.enabled=!props.transferActive;transform.getHelper().visible=!props.transferActive;});runtime.render();},[props.transferActive]);
 
-  return <div data-transfer-active={props.transferActive||undefined} inert={props.renderPaused || undefined} data-render-paused={props.renderPaused || undefined} className="three-view" ref={mountRef} tabIndex={0} role="region" aria-label={props.previewOnly ? "Windowed 3D preview" : "3D viewport"} data-keyboard-focus="false"
+  return <div data-transfer-active={props.transferActive||undefined} inert={props.renderPaused || undefined} data-render-paused={props.renderPaused || undefined} className="three-view" ref={mountRef} tabIndex={0} role="region" aria-label={props.previewOnly ? "Floating Preview" : "3D viewport"} data-keyboard-focus="false"
     onBlur={(event) => { event.currentTarget.dataset.keyboardFocus = "false"; }}
     onPointerDownCapture={(event) => {
       event.currentTarget.dataset.keyboardFocus = "false";

@@ -1,5 +1,6 @@
 "use client";
 
+import RecentProjectsMenu, { type RecentProject } from "./recent-projects-menu";
 import { reflectionPreset, type ReflectionPreset } from "./studio-environment";
 import { ProjectEncoder, ProjectSnapshotTracker, type ProjectPatch } from "./project-encoder";
 
@@ -10,6 +11,7 @@ import UiIcon, { toolIcon } from "./ui-icon";
 import ManualDialog from "./manual-dialog";
 import projectLimits from "../desktop/project-limits.json";
 import ProjectReplacementDialog, {type ProjectSaveOutcome} from "./project-replacement-dialog";
+import { hasUnsavedProjectChanges } from "./project-save-state";
 import {transferDelta,type TransferFrame} from "./transfer-transform";
 import PerformancePanel from "./performance-panel";
 import WindowedOutput from "./windowed-output";
@@ -237,6 +239,7 @@ type SimulationSnapshot = {
 };
 type HistoryEntry = { label: string; state: SimulationSnapshot };
 type FileHandle = {
+  name?: string;
   createWritable: () => Promise<{
     write: (data: Blob | string) => Promise<void>;
     close: () => Promise<void>;
@@ -302,11 +305,18 @@ type DesktopProjectResult = {
   recoveryUsed?: boolean;
   path?: string;
   name?: string;
+  projectTitle?: string;
+  activeProjectPath?: string;
+  unsavedChanges?: boolean;
   content?: string;
   savedAt?: number;
   error?: string;
 };
 type DesktopBridge = {
+  openSpaceMouseSettings?: () => Promise<{ ok: boolean; error?: string }>;
+  onCloseRequested?: (callback: () => void) => () => void;
+  confirmClose?: () => Promise<void>;
+  startupProgress?: (stage: "project" | "scene" | "ready") => void;
   chooseResolumeXml: () => Promise<DesktopXmlResult>;
   linkLatestResolumeMap: () => Promise<DesktopXmlResult>;
   unlinkResolumeMap: () => Promise<{ ok: boolean }>;
@@ -336,6 +346,9 @@ type DesktopBridge = {
   }>;
   overwriteProject: (projectPath: string, data: ArrayBuffer) => Promise<DesktopProjectResult>;
   openProject: () => Promise<DesktopProjectResult>;
+  recentProjects?: () => Promise<RecentProject[]>;
+  openRecentProject?: (path: string) => Promise<DesktopProjectResult>;
+  rememberRecentProject?: (path: string) => Promise<{ ok: boolean }>;
   autosaveProjectDelta?: (patch: ProjectPatch) => Promise<DesktopProjectResult>;
   autosaveProject: (data: ArrayBuffer) => Promise<DesktopProjectResult>;
   autosaveProjectSync: (data: ArrayBuffer) => DesktopProjectResult;
@@ -585,6 +598,10 @@ const INFO_POSITIONS: Array<{ id: InfoPosition; label: string }> = [
 const CABINET_PALETTE = ["#ef3340", "#00c878", "#7957d5", "#f4d000", "#149fd3", "#e72c9f", "#86d92f", "#f47b20", "#2454d8", "#24c8ba", "#cf3ee8", "#f2505f"];
 const DEMO_PROJECT_NAME = "LO2S - OpticMesh - Demo";
 const DEMO_XML_NAME = `${DEMO_PROJECT_NAME}.xml`;
+const projectFileTitle = (filename?: string) => {
+  const name = (filename?.split(/[\\/]/).at(-1) || "").replace(/\.(lo2s|json)$/i, "").trim();
+  return /^Startup Project(?:\.previous)?$/i.test(name) ? "" : name;
+};
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const round = (value: number, digits = 4) => Number(value.toFixed(digits));
 const slugify = (value: string) =>
@@ -2316,6 +2333,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   const [notice, setNotice] = useState("");
   const [startupRestoreReady, setStartupRestoreReady] = useState(false),
     [startupProjectStatus, setStartupProjectStatus] = useState("Preparing autosave…");
+  const [pendingOpenProject,setPendingOpenProject]=useState<DesktopProjectResult|null>(null);
   const [pendingReplacement,setPendingReplacement]=useState<"new"|"demo-scene"|"demo-map"|null>(null);
   const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [helpTopic, setHelpTopic] = useState<"manual" | "shortcuts" | null>(null);
@@ -4556,6 +4574,22 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     [simulationReflectionPreset, simulationBodyAppearances, importedModels, calculatorSources, config, logoData, logoName, mapView, patternCalibration, patternStyle, rawXml, simulationBackgroundLevel, simulationCamera, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTool, simulationTransformSpace, simulationTransforms, simulationVisibility, sliceOverrides, workspaceMode, xmlName],
   );
   const currentProjectSnapshot = useCallback(() => ({ ...projectSnapshot, simulation: { ...projectSnapshot.simulation, camera: simulationCameraMemory.current || projectSnapshot.simulation.camera } }), [projectSnapshot]);
+  const savedProjectSnapshot = useRef<Record<string, unknown> | null>(null);
+  const nextCloseBaseline = useRef<"clean" | "unsaved" | null>("clean");
+  const [closeRequested, setCloseRequested] = useState(false);
+  const [startupViewReady, setStartupViewReady] = useState(false);
+  const finishStartup = useCallback(() => {
+    if (!startupRestoreReady) return;
+    setStartupViewReady(true);
+    (window as PickerWindow).lo2sDesktop?.startupProgress?.("ready");
+  }, [startupRestoreReady]);
+  const recoverySession = useRef<{ projectPath: string | null; unsavedChanges: boolean } | null>(null);
+  const recoveryProjectSnapshot = useCallback(() => {
+    const snapshot = currentProjectSnapshot();
+    const unsavedChanges = hasUnsavedProjectChanges(savedProjectSnapshot.current, snapshot);
+    if (recoverySession.current?.projectPath !== activeProjectPath || recoverySession.current.unsavedChanges !== unsavedChanges) recoverySession.current = { projectPath: activeProjectPath, unsavedChanges };
+    return { ...snapshot, desktopSession: recoverySession.current };
+  }, [activeProjectPath, currentProjectSnapshot]);
   const projectData = useCallback(() => JSON.stringify(currentProjectSnapshot(), null, 2), [currentProjectSnapshot]);
   const projectEncoder = useRef<ProjectEncoder | null>(null);
   const desktopProjectTracker = useRef(new ProjectSnapshotTracker());
@@ -4565,7 +4599,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     const encoded = new TextEncoder().encode(projectData());
     return encoded.buffer as ArrayBuffer;
   }, [projectData]);
-  const applyProjectData = useCallback((source: string, successMessage = "Project loaded") => {
+  const applyProjectData = useCallback((source: string, successMessage = "Project loaded", filename?: string) => {
     try {
       const data = JSON.parse(source);
       if (data?.format !== "opticmesh-project") throw new Error("This is not a LO2S - OpticMesh project.");
@@ -4576,6 +4610,10 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         ...DEFAULT_CONFIG,
         ...data.config,
       } as PatternConfig & { pixelPitchCm?: number; checkerColor?: string };
+      const fileTitle = projectFileTitle(filename);
+      const savedTitle = typeof data.config?.project === "string" ? data.config.project.trim() : "";
+      const defaultTitles = [DEFAULT_CONFIG.project, DEMO_PROJECT_NAME];
+      if (fileTitle && (!savedTitle || defaultTitles.some(title => slugify(title) === slugify(savedTitle)))) migrated.project = fileTitle;
       if (!data.config?.pixelPitchMm && data.config?.pixelPitchCm) migrated.pixelPitchMm = data.config.pixelPitchCm * 10;
       if (data.config?.checkerColor && !data.config?.checkerColorA) {
         migrated.checkerColorA = data.config.checkerColor;
@@ -4647,6 +4685,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       undoHistoryRef.current = [];
       redoHistoryRef.current = [];
       setHistoryState({});
+      nextCloseBaseline.current = "unsaved";
       setNotice(successMessage);
       return true;
     } catch (error) {
@@ -4715,6 +4754,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     } finally { compileInFlight.current = false; setCompilingProject(false); }
   };
   const saveProject = useCallback(async ():Promise<ProjectSaveOutcome> => {
+    const savingSnapshot = currentProjectSnapshot();
     const filename = `${slugify(config.project)}.lo2s`;
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (desktop?.saveProject) {
@@ -4722,7 +4762,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       try { result = await desktop.saveProject(filename, encodedProjectData()); }
       catch(error){setNotice(error instanceof Error?error.message:"Unable to save the project");return "failed";}
       if (result.cancelled) return "cancelled";
-      if (result.ok && result.path) setActiveProjectPath(result.path);
+      if (result.ok && result.path) {
+        setActiveProjectPath(result.path);
+        savedProjectSnapshot.current = { ...savingSnapshot, config: { ...savingSnapshot.config, project: result.projectTitle || savingSnapshot.config.project } };
+        nextCloseBaseline.current = null;
+        if (result.projectTitle) setConfig(current => ({ ...current, project: result.projectTitle! }));
+      }
       setNotice(result.ok ? "Project saved" : result.error || "Unable to save the project");
       return result.ok ? "saved" : "failed";
     }
@@ -4741,9 +4786,14 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             },
           ],
         });
+        const title = handle.name && handle.name.toLowerCase() !== filename.toLowerCase() ? projectFileTitle(handle.name) : "";
+        const namedBlob = title ? new Blob([JSON.stringify({ ...currentProjectSnapshot(), config: { ...config, project: title } }, null, 2)], { type: "application/x-opticmesh-project" }) : blob;
         const writable = await handle.createWritable();
-        try { await writable.write(blob); await writable.close(); }
+        try { await writable.write(namedBlob); await writable.close(); }
         catch(error){await writable.abort?.().catch(()=>{});throw error;}
+        savedProjectSnapshot.current = { ...savingSnapshot, config: { ...savingSnapshot.config, project: title || savingSnapshot.config.project } };
+        nextCloseBaseline.current = null;
+        if (title) setConfig(current => ({ ...current, project: title }));
         setNotice("Project saved");
         return "saved";
       } catch (error) {
@@ -4759,44 +4809,56 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     return "downloaded";
-  }, [config.project, encodedProjectData, projectData, setNotice]);
+  }, [config, currentProjectSnapshot, encodedProjectData, projectData, setNotice]);
   const loadProject = useCallback(
     (file?: File) => {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        if (applyProjectData(String(reader.result), `Project loaded: ${file.name}`)) setActiveProjectPath(null);
+        if (applyProjectData(String(reader.result), `Project loaded: ${file.name}`, file.name)) { setActiveProjectPath(null); nextCloseBaseline.current = "clean"; }
       };
       reader.readAsText(file);
     },
     [applyProjectData],
   );
+  const acceptOpenedProject = useCallback((result: DesktopProjectResult) => {
+    if (result.content && applyProjectData(result.content, `Project loaded: ${result.name || "LO2S project"}`, result.name || result.path)) {
+      setActiveProjectPath(result.path || null); nextCloseBaseline.current = "clean";
+      if (result.path) void (window as PickerWindow).lo2sDesktop?.rememberRecentProject?.(result.path);
+    }
+  }, [applyProjectData]);
+  const reviewOpenedProject = useCallback((result: DesktopProjectResult) => {
+    if (result.cancelled) return;
+    if (!result.ok || !result.content) { setNotice(result.error || "Unable to open the project"); return; }
+    if (hasUnsavedProjectChanges(savedProjectSnapshot.current, currentProjectSnapshot())) setPendingOpenProject(result);
+    else acceptOpenedProject(result);
+  }, [acceptOpenedProject, currentProjectSnapshot, setNotice]);
   const openProject = useCallback(async () => {
     const desktop = (window as PickerWindow).lo2sDesktop;
-    if (!desktop?.openProject) {
-      projectInputRef.current?.click();
-      return;
-    }
-    const result = await desktop.openProject();
-    if (result.cancelled) return;
-    if (!result.ok || !result.content) {
-      setNotice(result.error || "Unable to open the project");
-      return;
-    }
-    if (applyProjectData(result.content, `Project loaded: ${result.name || "LO2S project"}`)) setActiveProjectPath(result.path || null);
-  }, [applyProjectData, setNotice]);
+    if (!desktop?.openProject) { projectInputRef.current?.click(); return; }
+    try { reviewOpenedProject(await desktop.openProject()); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Unable to open the project"); }
+  }, [reviewOpenedProject, setNotice]);
+  const openRecentProject = useCallback(async (path: string) => {
+    setV070Menu(null);
+    try { const result = await (window as PickerWindow).lo2sDesktop?.openRecentProject?.(path); if (result) reviewOpenedProject(result); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Unable to open the project"); }
+  }, [reviewOpenedProject, setNotice]);
+  const loadRecentProjects = useCallback(() => (window as PickerWindow).lo2sDesktop?.recentProjects?.() || Promise.resolve([]), []);
   const saveActiveProject = useCallback(async ():Promise<ProjectSaveOutcome> => {
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!activeProjectPath || !desktop?.overwriteProject) {
       return saveProject();
     }
+    const savingSnapshot = currentProjectSnapshot();
     let result:DesktopProjectResult;
     try { result = await desktop.overwriteProject(activeProjectPath, encodedProjectData()); }
     catch(error){setNotice(error instanceof Error?error.message:"Unable to save the project");return "failed";}
     if(result.cancelled)return "cancelled";
+    if (result.ok) { savedProjectSnapshot.current = savingSnapshot; nextCloseBaseline.current = null; }
     setNotice(result.ok ? `Saved ${activeProjectPath.split(/[\\/]/).at(-1)}` : result.error || "Unable to overwrite the project");
     return result.ok ? "saved" : "failed";
-  }, [activeProjectPath, encodedProjectData, saveProject, setNotice]);
+  }, [activeProjectPath, currentProjectSnapshot, encodedProjectData, saveProject, setNotice]);
   const blankProjectSource = useCallback(
     (demo = false, demoWorkspace: "resolume" | "simulation" = "simulation") => {
       const demoMap = demo ? parseResolumeXml(DEMO_RESOLUME_XML) : null;
@@ -4844,6 +4906,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   );
   const replaceWithBlankProject = useCallback(() => {
     if (applyProjectData(blankProjectSource(), "New blank project")) {
+      nextCloseBaseline.current = "clean";
       setActiveProjectPath(null);
       setStartupProjectStatus("New project · autosave active");
     }
@@ -4874,12 +4937,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   const requestReplacement=(action:"new"|"demo-scene"|"demo-map")=>{setV070Menu(null);setPendingReplacement(action);};
   const createBlankProject=()=>requestReplacement("new");
   const loadDemoProject=(mode:"resolume"|"simulation")=>requestReplacement(mode==="resolume"?"demo-map":"demo-scene");
-  const replacementDialog=pendingReplacement&&<ProjectReplacementDialog key={pendingReplacement} action={pendingReplacement==="new"?"Create a new project":pendingReplacement==="demo-map"?"Load Demo Map":"Load Demo Scene"} onSave={saveActiveProject} onCancel={()=>setPendingReplacement(null)} onProceed={async()=>{
+  const replacementDialog=closeRequested ? <ProjectReplacementDialog purpose="close" action="Do you want to save your project" saveLabel={activeProjectPath ? "Save" : "Save As…"} onSave={saveActiveProject} onSaveAs={activeProjectPath ? saveProject : undefined} onCancel={()=>setCloseRequested(false)} onProceed={async()=>{await (window as PickerWindow).lo2sDesktop?.confirmClose?.();}} /> : pendingOpenProject ? <ProjectReplacementDialog action={`Open ${pendingOpenProject.name || "project"}`} onSave={saveActiveProject} onCancel={()=>setPendingOpenProject(null)} onProceed={async()=>{acceptOpenedProject(pendingOpenProject);setPendingOpenProject(null);}} /> : pendingReplacement&&<ProjectReplacementDialog key={pendingReplacement} action={pendingReplacement==="new"?"Create a new project":pendingReplacement==="demo-map"?"Load Demo Map":"Load Demo Scene"} onSave={saveActiveProject} onCancel={()=>setPendingReplacement(null)} onProceed={async()=>{
     if(pendingReplacement==="new")replaceWithBlankProject();else await replaceWithDemoProject(pendingReplacement==="demo-map"?"resolume":"simulation");
     setPendingReplacement(null);
   }} />;
   const openDemoProject = () => { loadDemoProject("simulation"); };
-  const loadDemoScene = openDemoProject;
   const revealProjectsFolder = useCallback(async () => {
     const result = await (window as PickerWindow).lo2sDesktop?.revealProjectsFolder?.();
     if (result && !result.ok) setNotice(result.error || "Unable to open the Projects folder");
@@ -4894,19 +4956,44 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       return;
     }
     let active = true;
+    desktop.startupProgress?.("project");
     void desktop.loadStartupProject().then((result) => {
       if (!active) return;
       if (result.ok && result.restored && result.content) {
         applyProjectData(result.content, result.recoveryUsed ? "Recovered the previous valid autosave" : "Restored latest working project");
-        setActiveProjectPath(null);
+        setActiveProjectPath(result.activeProjectPath || null);
+        if (result.unsavedChanges === false) nextCloseBaseline.current = "clean";
       } else if (!result.ok) setNotice(result.error || "The startup project could not be restored");
       setStartupRestoreReady(true);
       setStartupProjectStatus(!result.ok ? `Restore failed: ${result.error || "unable to restore project"}` : result.recoveryUsed ? "Recovery used · autosave active" : result.restored ? "Latest project restored · autosave active" : "Autosave active");
+    }).catch(error => {
+      if (!active) return;
+      setNotice(error instanceof Error ? error.message : "The startup project could not be restored");
+      setStartupProjectStatus("Restore failed"); setStartupRestoreReady(true);
     });
     return () => {
       active = false;
     };
   }, [applyProjectData]);
+  useEffect(() => {
+    if (!startupRestoreReady || startupViewReady) return;
+    if (workspaceMode === "simulation") { (window as PickerWindow).lo2sDesktop?.startupProgress?.("scene"); return; }
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(finishStartup); });
+    return () => cancelAnimationFrame(frame);
+  }, [startupRestoreReady, startupViewReady, workspaceMode, finishStartup]);
+  useEffect(() => {
+    if (!startupRestoreReady || !nextCloseBaseline.current) return;
+    savedProjectSnapshot.current = nextCloseBaseline.current === "clean" ? currentProjectSnapshot() : null;
+    nextCloseBaseline.current = null;
+  }, [currentProjectSnapshot, startupRestoreReady]);
+  useEffect(() => {
+    const desktop = (window as PickerWindow).lo2sDesktop;
+    return desktop?.onCloseRequested?.(() => {
+      if (!startupRestoreReady) return;
+      if (hasUnsavedProjectChanges(savedProjectSnapshot.current, currentProjectSnapshot())) { setV070Menu(null); setCloseRequested(true); }
+      else void desktop.confirmClose?.();
+    });
+  }, [currentProjectSnapshot, startupRestoreReady]);
   useEffect(() => {
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!startupRestoreReady || !desktop?.autosaveProject) return;
@@ -4924,12 +5011,12 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
         if (desktop.autosaveProjectDelta) {
           // Send only changed fields. Electron's context bridge copies full
           // buffers synchronously even when the receiving IPC handler is async.
-          const patch = desktopProjectTracker.current.patch(currentProjectSnapshot());
+          const patch = desktopProjectTracker.current.patch(recoveryProjectSnapshot());
           result = await desktop.autosaveProjectDelta(patch);
           if (!result.ok) desktopProjectTracker.current.reset();
         } else {
           const encoder = projectEncoder.current ||= new ProjectEncoder();
-          const bytes = await encoder.encode(currentProjectSnapshot());
+          const bytes = await encoder.encode(recoveryProjectSnapshot());
           if (!active) return;
           result = await desktop.autosaveProject(bytes);
         }
@@ -4942,7 +5029,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     cameraAutosaveRequest.current = scheduleCameraSave;
     timer = window.setTimeout(save, 500);
     return () => { active = false; window.clearTimeout(timer); if (cameraAutosaveRequest.current === scheduleCameraSave) cameraAutosaveRequest.current = null; };
-  }, [currentProjectSnapshot, startupRestoreReady]);
+  }, [recoveryProjectSnapshot, startupRestoreReady]);
   useEffect(() => {
     const handleSave = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== "s") return;
@@ -4957,11 +5044,11 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     const desktop = (window as PickerWindow).lo2sDesktop;
     if (!startupRestoreReady || !desktop?.autosaveProjectSync) return;
     const flush = () => {
-      desktop.autosaveProjectSync(encodedProjectData());
+      desktop.autosaveProjectSync(new TextEncoder().encode(JSON.stringify(recoveryProjectSnapshot())).buffer as ArrayBuffer);
     };
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
-  }, [encodedProjectData, startupRestoreReady]);
+  }, [recoveryProjectSnapshot, startupRestoreReady]);
 
   const beginInteraction = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button === 1 || (event.button === 0 && spaceDown)) {
@@ -5291,6 +5378,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           }
         />
         <button
+          className="hierarchy-state-toggle" aria-pressed={simulationVisibility[slice.id] === false}
           aria-label={simulationVisibility[slice.id] === false ? "Show slice in simulation" : "Hide slice in simulation"}
           title={simulationVisibility[slice.id] === false ? "Show slice in simulation" : "Hide slice in simulation"}
           onClick={(event) => {
@@ -5301,6 +5389,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           <UiIcon name={simulationVisibility[slice.id] === false ? "hidden" : "eye"} />
         </button>
         <button
+          className="hierarchy-state-toggle" aria-pressed={Boolean(simulationLocks[slice.id])}
           aria-label={simulationLocks[slice.id] ? "Unlock slice" : "Lock slice"}
           title={simulationLocks[slice.id] ? "Unlock slice" : "Lock slice"}
           onClick={(event) => {
@@ -5402,7 +5491,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             </span>
           )}</span>
           <button
-            title={group.visible ? "Hide group in simulation" : "Show group in simulation"}
+            className="hierarchy-state-toggle" aria-pressed={!group.visible}
+          title={group.visible ? "Hide group in simulation" : "Show group in simulation"}
             aria-label={group.visible ? "Hide group" : "Show group"}
             onClick={(event) => {
               event.stopPropagation();
@@ -5414,7 +5504,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             <UiIcon name={group.visible ? "eye" : "hidden"} />
           </button>
           <button
-            title={group.locked ? "Unlock group" : "Lock group"}
+            className="hierarchy-state-toggle" aria-pressed={group.locked}
+          title={group.locked ? "Unlock group" : "Lock group"}
             aria-label={group.locked ? "Unlock group" : "Lock group"}
             onClick={(event) => {
               event.stopPropagation();
@@ -5499,17 +5590,17 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             onPointerEnter={(event) => { if (event.pointerType !== "touch") setV070Menu((current) => current === null ? null : item); }}
             onBlur={(event) => { if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) setV070Menu(null); }}
             onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`button[aria-controls="toolbar-menu-${(v070Menu || item).toLowerCase()}"]`)?.focus(); setV070Menu(null); } }}
-          ><button aria-pressed={v070Menu === item} className={v070Menu === item ? v070.active : ""} aria-expanded={v070Menu === item} aria-controls={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); setV070Menu(v070Menu === item ? null : item); }}>{item}</button>{v070Menu === item && <section id={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); const action = (event.target as Element).closest("button"); if (action && !action.disabled) { event.currentTarget.parentElement?.querySelector<HTMLButtonElement>("button[aria-controls]")?.focus(); setV070Menu(null); } }}>
-            {item === "File" && <><button onClick={createBlankProject}>New Project</button><button onClick={openDemoProject}>Open Demo</button><button onClick={openProject}>Open Project…</button><hr /><button onClick={() => void saveActiveProject()}>Save</button><button onClick={saveProject}>Save As…</button><button disabled={compilingProject || !resolumeMap || !rawXml} onClick={() => void compileProject()}>{compilingProject ? "Compiling…" : "Compile Project…"}</button><button onClick={() => void revealProjectsFolder()}>Reveal Projects Folder</button></>}
+          ><button aria-pressed={v070Menu === item} className={v070Menu === item ? v070.active : ""} aria-expanded={v070Menu === item} aria-controls={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); setV070Menu(v070Menu === item ? null : item); }}>{item}</button>{v070Menu === item && <section id={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); const action = (event.target as Element).closest("button"); if (action && !action.disabled && !action.hasAttribute("data-menu-keep-open")) { event.currentTarget.parentElement?.querySelector<HTMLButtonElement>("button[aria-controls]")?.focus(); setV070Menu(null); } }}>
+            {item === "File" && <><button onClick={createBlankProject}>New Project</button><button onClick={openDemoProject}>Open Demo</button><button onClick={openProject}>Open Project…</button>{typeof window !== "undefined" && (window as PickerWindow).lo2sDesktop?.recentProjects && <RecentProjectsMenu load={loadRecentProjects} onOpen={openRecentProject} />}<hr /><button onClick={() => void saveActiveProject()}>Save</button><button onClick={saveProject}>Save As…</button><button disabled={compilingProject || !resolumeMap || !rawXml} onClick={() => void compileProject()}>{compilingProject ? "Compiling…" : "Compile Project…"}</button><button onClick={() => void revealProjectsFolder()}>Reveal Projects Folder</button></>}
             {item === "Export" && (isV0703D ? <><strong>3D scene formats</strong><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("glb")}>GLB · Universal binary</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("gltf")}>glTF · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("obj")}>Wavefront OBJ · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("mvr")}>MVR 1.5 · Scene meshes</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("stl")}>STL · Geometry only</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("usdz")}>USDZ · Packaged scene</button>{simulationExporting && <small>Building 3D export…</small>}</> : <><button onClick={exportCurrent}>{isV070Map ? mapView === "input" ? "Input Map PNG" : "Current Output PNG" : "Current Pattern PNG"}</button>{isV070Map && resolumeMap && <><button onClick={exportSelected} disabled={!selectedSlices.length}>Selected Slices</button><button onClick={exportOutputs}>All Output Maps</button></>}</>)}
-            {item === "Output" && <><button aria-pressed={patternOutput === "off" && !windowedOutputOpen} className={patternOutput === "off" && !windowedOutputOpen ? v070.active : ""} onClick={() => { setPatternOutput("off"); setWindowedOutputOpen(false); }}>OFF</button><button aria-pressed={patternOutput === "ndi"} className={patternOutput === "ndi" ? v070.active : ""} onClick={() => setPatternOutput("ndi")}>NDI</button><button aria-pressed={patternOutput === "spout"} className={patternOutput === "spout" ? v070.active : ""} onClick={() => setPatternOutput("spout")}>Spout</button><hr /><button disabled={!isV0703D && !windowedOutputOpen} aria-pressed={windowedOutputOpen} title="Camera-only 3D preview" onClick={() => setWindowedOutputOpen((value) => !value)}>Windowed</button><small>{windowedOutputOpen ? "Windowed 3D preview open" : "Windowed is available in 3D"}</small><button disabled={!windowedOutputOpen} aria-pressed={pauseMainViewport} title="Stop drawing the main 3D viewport while Windowed output stays live" onClick={() => setMainViewportPaused(value => !value)}>Pause main viewport</button><hr /><small>{patternOutputStatus}</small></>}
-            {item === "Tools" && <button onClick={() => { setV070Focused(false); setNotice(`${isV0703D ? "3D" : isV070Map ? "Pixel Map" : "Pattern"} tools are active in the left panel`); }}>{isV0703D ? "3D Tools" : isV070Map ? "Pixel Map Tools" : "Pattern Tools"}</button>}
+            {item === "Output" && <><button aria-pressed={patternOutput === "off" && !windowedOutputOpen} className={patternOutput === "off" && !windowedOutputOpen ? v070.active : ""} onClick={() => { setPatternOutput("off"); setWindowedOutputOpen(false); }}>OFF</button><button aria-pressed={patternOutput === "ndi"} className={patternOutput === "ndi" ? v070.active : ""} onClick={() => setPatternOutput("ndi")}>NDI</button><button aria-pressed={patternOutput === "spout"} className={patternOutput === "spout" ? v070.active : ""} onClick={() => setPatternOutput("spout")}>Spout</button><hr /><button disabled={!isV0703D && !windowedOutputOpen} aria-pressed={windowedOutputOpen} title="Camera-only 3D preview" onClick={() => setWindowedOutputOpen((value) => !value)}>Floating Preview</button><small>{windowedOutputOpen ? "Floating Preview open" : "Floating Preview is available in 3D"}</small><button disabled={!windowedOutputOpen} aria-pressed={pauseMainViewport} title="Stop drawing the main 3D viewport while Floating Preview stays live" onClick={() => setMainViewportPaused(value => !value)}>Pause main viewport</button><hr /><small>{patternOutputStatus}</small></>}
+            {item === "Tools" && <><button onClick={() => { setV070Focused(false); setNotice(`${isV0703D ? "3D" : isV070Map ? "Pixel Map" : "Pattern"} tools are active in the left panel`); }}>{isV0703D ? "3D Tools" : isV070Map ? "Pixel Map Tools" : "Pattern Tools"}</button>{isV0703D && typeof window !== "undefined" && (window as PickerWindow).lo2sDesktop?.openSpaceMouseSettings && <button onClick={async () => { const result = await (window as PickerWindow).lo2sDesktop!.openSpaceMouseSettings!(); if (!result.ok) setNotice(result.error || "Could not open 3Dconnexion settings."); }}>3Dconnexion Settings…</button>}</>}
             {item === "Help" && <><button onClick={() => setHelpTopic("manual")}>OpticMesh Manual</button><button onClick={() => setHelpTopic("shortcuts")}>Keyboard Shortcuts</button></>}
             {item === "About" && <><strong>LO2S - OpticMesh</strong><small>Version {DISPLAY_VERSION} · {BUILD_DESCRIPTION}</small></>}
           </section>}</div>)}</nav>
           <div className={v070.historyActions}><button title={historyState.undo ? `Undo · ${historyState.undo}` : "Undo"} disabled={!isV0703D || !historyState.undo} onClick={undoSimulation}>Undo{historyState.undo ? ` · ${historyState.undo}` : ""}</button><button title={historyState.redo ? `Redo · ${historyState.redo}` : "Redo"} disabled={!isV0703D || !historyState.redo} onClick={redoSimulation}>Redo{historyState.redo ? ` · ${historyState.redo}` : ""}</button></div>
         </header>
-        <div className={v070.project}><div className={v070.projectMain}><div className={v070.projectInfo}><span>Project</span><strong title={config.project}>{config.project}</strong><span className={v070.saveStatus} data-state={startupProjectStatus.toLowerCase().includes("failed") ? "error" : startupProjectStatus.includes("autosaved") ? "success" : "information"} role="status" aria-live="polite" title={startupProjectStatus}><i />{startupProjectStatus}</span></div><div className={v070.notifications} aria-label="Notifications"><span role="status" aria-live="polite" aria-atomic="true" title={notice || undefined}>{notice}</span>{notice && <button type="button" aria-label="Dismiss notification" title="Dismiss notification" onClick={() => setNotice("")}><UiIcon name="close" /></button>}</div></div><div className={v070.layoutArea}><div className={v070.layoutSwitch}><button aria-pressed={!v070Focused} className={!v070Focused ? v070.active : ""} onClick={() => setV070Focused(false)}>Studio</button><button aria-pressed={v070Focused} className={v070Focused ? v070.active : ""} onClick={() => setV070Focused(true)}>Focused</button></div></div></div>
+        <div className={v070.project}><div className={v070.projectMain}><div className={v070.projectInfo}><span>Project</span><strong title={config.project}>{config.project}</strong><span className={v070.saveStatus} data-state={startupProjectStatus.toLowerCase().includes("failed") ? "error" : startupProjectStatus.includes("autosaved") ? "success" : "information"} role="status" aria-live="polite" title={startupProjectStatus}><i />{startupProjectStatus}</span></div><div className={v070.notifications} data-active={Boolean(notice)} aria-label="Notifications"><span role="status" aria-live="polite" aria-atomic="true" title={notice || undefined}>{notice}</span>{notice && <button type="button" aria-label="Dismiss notification" title="Dismiss notification" onClick={() => setNotice("")}><UiIcon name="close" /></button>}</div></div><div className={v070.layoutArea}><div className={v070.layoutSwitch}><button aria-pressed={!v070Focused} className={!v070Focused ? v070.active : ""} onClick={() => setV070Focused(false)}>Studio</button><button aria-pressed={v070Focused} className={v070Focused ? v070.active : ""} onClick={() => setV070Focused(true)}>Focused</button></div></div></div>
         <section className={v070.workspace}>
           <nav className={v070.rail}><button aria-pressed={!isV070Map && !isV0703D} className={!isV070Map && !isV0703D ? v070.active : ""} onClick={() => { changeWorkspace("patterns"); setV070InspectorTab("setup"); }}><b><PatternsModeIcon /></b><span>Patterns</span></button><button aria-pressed={isV070Map} className={isV070Map ? v070.active : ""} onClick={() => { changeWorkspace("resolume"); setV070InspectorTab("source"); }}><b><PixelMapModeIcon /></b><span>Pixel Map</span></button><button aria-pressed={isV0703D} className={isV0703D ? v070.active : ""} onClick={() => { changeWorkspace("simulation"); setV070InspectorTab("scene"); }}><b><ThreeDModeIcon /></b><span>3D</span></button><i /><button onClick={() => setHelpTopic("manual")} title="OpticMesh Manual"><b><UiIcon name="book" /></b><span>Guide</span></button></nav>
           <aside className={v070.tools}>
@@ -5517,18 +5608,16 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             <label className={v070.search}><UiIcon name="search" /><input value={v070ToolQuery} onChange={(event) => setV070ToolQuery(event.target.value)} placeholder="Search tools…" aria-label="Search tools" /></label>
             {isV0703D ? <>
               <VSection title="3D models" styles={v070}><button className={v070.choose} onClick={() => setModelImportOpen(true)}>Import Model…</button></VSection>
-              <VSection title="Scene source" styles={v070} query={v070ToolQuery} keywords={["Choose XML", "Load Demo"]}>
+              <VSection title="Scene source" styles={v070} query={v070ToolQuery} keywords={["Choose XML"]}>
                 <button className={v070.choose} onClick={chooseXml}>Choose Resolume XML…</button>
-                <button className={v070.choose} onClick={loadDemoScene}>Load Demo Scene</button>
               </VSection>
               <ToolList title="Transform" items={[["Move", simulationTool === "translate", () => setSimulationTool("translate")], ["Rotate", simulationTool === "rotate", () => setSimulationTool("rotate")], ["Scale", simulationTool === "scale", () => setSimulationTool("scale")]]} styles={v070} query={v070ToolQuery} />
               <ToolList title="Arrange" items={[["Group", false, groupSelectedSlices, !modelSelection.length && !selectedSliceIds.length && !hasGroupSelection], ["Ungroup", false, ungroupSelectedSlices, !modelSelection.length && !hasGroupSelection && !simulationGroups.some((group) => group.sliceIds.some((id) => selectedSliceIds.includes(id)))], ["Transfer", !!transferSource, () => setTransferSource(transferSource?null:transferCandidate), !transferAllowed], ["Set Parent", false, () => { setV070InspectorTab("scene"); setNotice("Drag slices, model parts or groups onto a group in Scene Hierarchy to set their parent"); }]]} styles={v070} query={v070ToolQuery} />
               <ToolList title="View" items={[["All Views", simulationViewMode === "four", () => setSimulationViewMode("four")], ["Focus Selection", false, () => setSimulationFocusSignal((value) => value + 1), !selectedSliceIds.length && !modelSelection.length], ["Fit Scene", false, () => { setSimulationViewMode("perspective"); setSimulationFitSignal((value) => value + 1); }]]} styles={v070} query={v070ToolQuery} />
               <VSection title="Scene display" styles={v070} query={v070ToolQuery} keywords={["Floor", "Grid", "Background", "Brightness", "HDRI", "Reflection"]}>{sceneDisplayControls}</VSection>
             </> : isV070Map ? <>
-              <VSection title="Advanced Output XML" styles={v070} query={v070ToolQuery} keywords={["Choose XML", "Load Demo", "Link Resolume"]}>
+              <VSection title="Advanced Output XML" styles={v070} query={v070ToolQuery} keywords={["Choose XML", "Link Resolume"]}>
                 <button className={v070.choose} onClick={chooseXml}>Choose XML…</button>
-                <button className={v070.choose} onClick={() => void loadDemoProject("resolume")}>Load Demo Map</button>
                 <button className={`${v070.choose} ${xmlLinkState === "linked" ? v070.active : ""}`} onClick={xmlLinkState === "linked" ? unlinkResolume : linkResolume}>{xmlLinkState === "linked" ? "Unlink Resolume Map" : xmlLinkState === "linking" ? "Linking…" : "Link Resolume Map"}</button>
                 <input ref={xmlInputRef} hidden type="file" accept=".xml,text/xml" onChange={(event) => loadXml(event.target.files?.[0])} />
                 {xmlName && <div className={v070.fileStatus}><i /><span title={xmlName}><b>{xmlLinkState === "linked" ? "LIVE" : "FILE"}</b>{xmlName}</span></div>}
@@ -5551,7 +5640,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           </aside>
           <section className={`${v070.center} ${v070DiagnosticTab === "performance" ? v070.performanceCenter : ""} ${isV0703D && v070DiagnosticTab === "material" ? v070.materialCenter : ""} ${isV0703D ? v070.threeCenter : ""} ${isV070Map ? v070.mapCenter : ""} ${!v070DiagnosticsOpen ? v070.collapsedCenter : ""}`}>
             <div className={v070.toolbar}><div className={v070.contextControls}>{isV0703D ? <><button title="Move (E)" aria-label="Move" aria-pressed={simulationTool === "translate"} className={`${v070.iconButton} ${simulationTool === "translate" ? v070.active : ""}`} onClick={() => setSimulationTool("translate")}><UiIcon name="move" /></button><button title="Rotate (R)" aria-label="Rotate" aria-pressed={simulationTool === "rotate"} className={`${v070.iconButton} ${simulationTool === "rotate" ? v070.active : ""}`} onClick={() => setSimulationTool("rotate")}><UiIcon name="rotate" /></button><button title="Scale (T) — hold Shift while dragging for proportional scaling" aria-label="Scale" aria-pressed={simulationTool === "scale"} className={`${v070.iconButton} ${simulationTool === "scale" ? v070.active : ""}`} onClick={() => setSimulationTool("scale")}><UiIcon name="scale" /></button><button aria-label="Snap" aria-pressed={simulationSnapEnabled} className={`${v070.iconButton} ${simulationSnapEnabled ? v070.active : ""}`} title="Snap movement to the 1 metre world grid" onClick={() => { recordSimulationHistory(simulationSnapEnabled ? "Disable grid snap" : "Enable grid snap"); setSimulationSnapEnabled(value => !value); }}><UiIcon name="snap" /></button><button title="Local coordinate system" aria-label="Local" aria-pressed={simulationTransformSpace === "local"} className={`${v070.iconButton} ${simulationTransformSpace === "local" ? v070.active : ""}`} onClick={() => setSimulationTransformSpace("local")}><UiIcon name="local" /></button><button title="World coordinate system" aria-label="World" aria-pressed={simulationTransformSpace === "world"} className={`${v070.iconButton} ${simulationTransformSpace === "world" ? v070.active : ""}`} onClick={() => setSimulationTransformSpace("world")}><UiIcon name="world" /></button></> : isV070Map ? <><button aria-pressed={mapView === "input"} className={mapView === "input" ? v070.active : ""} onClick={() => changeMapView("input")}>Input Map</button><button aria-pressed={mapView === "output"} className={mapView === "output" ? v070.active : ""} onClick={() => changeMapView("output")}>Output Map</button></> : PROJECTION_FORMATS.map((format) => <button key={format.id} aria-pressed={config.projectionFormat === format.id} className={config.projectionFormat === format.id ? v070.active : ""} onClick={() => selectProjectionFormat(format.id)}>{format.name}</button>)}</div><div className={v070.viewControls}>{isV0703D ? <><select className={v070.cameraSelect} aria-label="Camera view" value={simulationViewMode} onChange={(event) => setSimulationViewMode(event.target.value as SimulationView)}><option value="perspective">Perspective</option><option value="top">Top</option><option value="right">Right</option><option value="front">Front</option><option value="four">All Views</option></select><span className={v070.cameraButtons}><button aria-pressed={simulationViewMode === "perspective"} className={simulationViewMode === "perspective" ? v070.active : ""} onClick={() => setSimulationViewMode("perspective")}>Perspective</button><button aria-pressed={simulationViewMode === "top"} className={simulationViewMode === "top" ? v070.active : ""} onClick={() => setSimulationViewMode("top")}>Top</button><button aria-pressed={simulationViewMode === "right"} className={simulationViewMode === "right" ? v070.active : ""} onClick={() => setSimulationViewMode("right")}>Right</button><button aria-pressed={simulationViewMode === "front"} className={simulationViewMode === "front" ? v070.active : ""} onClick={() => setSimulationViewMode("front")}>Front</button><button aria-pressed={simulationViewMode === "four"} className={simulationViewMode === "four" ? v070.active : ""} onClick={() => setSimulationViewMode("four")}>All Views</button></span><button disabled={!selectedSliceIds.length && !modelSelection.length} onClick={() => setSimulationFocusSignal((value) => value + 1)}>Focus</button><button onClick={() => setSimulationFitSignal((value) => value + 1)}>Fit Scene</button></> : <><button aria-pressed={fullscreenMode === "fit"} className={fullscreenMode === "fit" ? v070.active : ""} onClick={resetView}>Fit Canvas</button><button aria-pressed={fullscreenMode === "actual"} className={fullscreenMode === "actual" ? v070.active : ""} onClick={actualPixels}>Actual 1:1</button></>}<button onClick={enterFullscreen} aria-label="Fullscreen viewport" title="Fullscreen viewport"><UiIcon name="fullscreen" /></button></div></div>
-            <div className={v070.canvasShell} ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>{isV0703D && pauseMainViewport && <div className={v070.viewportPauseOverlay}><strong>Main viewport paused</strong><span>Windowed output stays live. Scene edits continue to update it.</span><button onClick={() => setMainViewportPaused(false)}>Resume viewport</button></div>}<RetainedWorkspace key={simulationCameraSession} active={isV0703D}><ThreeSimulation key={simulationCameraSession} cameraMemory={simulationCameraMemory} transferActive={!!transferSource} onTransferTarget={transferToTarget} renderPaused={!isV0703D || pauseMainViewport} outputActive={isV0703D && patternOutput !== "off"} bodyAppearanceBySlice={simulationBodyBySlice} {...modelProps} performanceMetrics={renderMetrics.simulation} slices={allSlices} compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth} compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight} masterPitchMm={simulationMasterPitchMm} pitchBySlice={simulationPitchBySlice} depthBySlice={simulationDepthBySlice} curvatureBySlice={simulationCurvatureBySlice} pivotBySlice={simulationPivotBySlice} selectedIds={selectedSliceIds} visibleIds={simulationVisibleIds} lockedIds={simulationLockedIds} transforms={groupModelPreview ? {...renderedSimulationTransforms,...simulationTransformPreview} : renderedSimulationTransforms} selectionTransform={selectedGroupSelectionWorldTransform} transformMode={simulationTool} transformSpace={simulationTransformSpace} source={simulationSource} sourceOverrides={simulationSourceOverrides} sourceMedia={simulationSourceMedia} sourceQuality={simulationQuality} cameraState={simulationCamera} textureVersion={simulationTextureVersion} fitSignal={simulationFitSignal} focusSignal={simulationFocusSignal} viewMode={simulationViewMode} snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible} floorVisible={simulationFloorVisible} backgroundLevel={simulationBackgroundLevel} reflectionPreset={simulationReflectionPreset} interactiveGeometryPreview={simulationGeometryPreview} drawPatternTexture={drawSimulationTexture} onSelectionChange={(ids,additive) => { if(!additive)setModelSelection([]); setSimulationTransformPreview(null); setSelectedGroupIds([]); setSelectedSliceIds(ids); }} onTransformPreview={setSimulationTransformPreview} onTransformsChange={commitSimulationTransforms} onCameraChange={publishSimulationCamera} onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }} /></RetainedWorkspace>{!isV0703D && <div ref={canvasStageRef} className={`canvas-stage ${spaceDown ? "panning" : ""} ${emptyPixelMap ? "map-empty-stage" : ""}`} onPointerDown={beginInteraction} onPointerMove={moveInteraction} onPointerUp={endInteraction} onPointerCancel={cancelInteraction} onWheel={(event) => { event.preventDefault(); adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY); }}>{emptyPixelMap && <div className="map-empty" role="status"><strong>Import a Resolume XML map</strong><span>Your input and output maps will appear here.</span></div>}<canvas ref={canvasRef} aria-hidden={emptyPixelMap || undefined} style={{ visibility: emptyPixelMap ? "hidden" : undefined, width: `${outputWidth * baseScale}px`, height: `${outputHeight * baseScale}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, imageRendering: fullscreenMode === "actual" && displayScale >= 1 ? "pixelated" : "auto" }} aria-label="LO2S - OpticMesh 0.7 live pattern output" /></div>}</div>
+            <div className={v070.canvasShell} ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>{isV0703D && pauseMainViewport && <div className={v070.viewportPauseOverlay}><strong>Main viewport paused</strong><span>Floating Preview stays live. Scene edits continue to update it.</span><button onClick={() => setMainViewportPaused(false)}>Resume viewport</button></div>}<RetainedWorkspace key={simulationCameraSession} active={isV0703D}><ThreeSimulation key={simulationCameraSession} onSceneReady={startupRestoreReady && !startupViewReady ? finishStartup : undefined} cameraMemory={simulationCameraMemory} transferActive={!!transferSource} onTransferTarget={transferToTarget} renderPaused={!isV0703D || pauseMainViewport} outputActive={isV0703D && patternOutput !== "off"} bodyAppearanceBySlice={simulationBodyBySlice} {...modelProps} performanceMetrics={renderMetrics.simulation} slices={allSlices} compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth} compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight} masterPitchMm={simulationMasterPitchMm} pitchBySlice={simulationPitchBySlice} depthBySlice={simulationDepthBySlice} curvatureBySlice={simulationCurvatureBySlice} pivotBySlice={simulationPivotBySlice} selectedIds={selectedSliceIds} visibleIds={simulationVisibleIds} lockedIds={simulationLockedIds} transforms={groupModelPreview ? {...renderedSimulationTransforms,...simulationTransformPreview} : renderedSimulationTransforms} selectionTransform={selectedGroupSelectionWorldTransform} transformMode={simulationTool} transformSpace={simulationTransformSpace} source={simulationSource} sourceOverrides={simulationSourceOverrides} sourceMedia={simulationSourceMedia} sourceQuality={simulationQuality} cameraState={simulationCamera} textureVersion={simulationTextureVersion} fitSignal={simulationFitSignal} focusSignal={simulationFocusSignal} viewMode={simulationViewMode} snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible} floorVisible={simulationFloorVisible} backgroundLevel={simulationBackgroundLevel} reflectionPreset={simulationReflectionPreset} interactiveGeometryPreview={simulationGeometryPreview} drawPatternTexture={drawSimulationTexture} onSelectionChange={(ids,additive) => { if(!additive)setModelSelection([]); setSimulationTransformPreview(null); setSelectedGroupIds([]); setSelectedSliceIds(ids); }} onTransformPreview={setSimulationTransformPreview} onTransformsChange={commitSimulationTransforms} onCameraChange={publishSimulationCamera} onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }} /></RetainedWorkspace>{!isV0703D && <div ref={canvasStageRef} className={`canvas-stage ${spaceDown ? "panning" : ""} ${emptyPixelMap ? "map-empty-stage" : ""}`} onPointerDown={beginInteraction} onPointerMove={moveInteraction} onPointerUp={endInteraction} onPointerCancel={cancelInteraction} onWheel={(event) => { event.preventDefault(); adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY); }}>{emptyPixelMap && <div className="map-empty" role="status"><strong>Import a Resolume XML map</strong><span>Your input and output maps will appear here.</span></div>}<canvas ref={canvasRef} aria-hidden={emptyPixelMap || undefined} style={{ visibility: emptyPixelMap ? "hidden" : undefined, width: `${outputWidth * baseScale}px`, height: `${outputHeight * baseScale}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, imageRendering: fullscreenMode === "actual" && displayScale >= 1 ? "pixelated" : "auto" }} aria-label="LO2S - OpticMesh 0.7 live pattern output" /></div>}</div>
             <div className={`${v070.diagnostics} ${isV070Map ? v070.mapDiagnostics : ""}`}>
               {isV0703D && <button aria-pressed={v070DiagnosticTab === "material"} className={v070DiagnosticTab === "material" ? v070.active : ""} onClick={()=>{setV070DiagnosticTab("material");setV070DiagnosticsOpen(true);}}>Material</button>}
               <button aria-pressed={v070DiagnosticTab === "validation"} className={v070DiagnosticTab === "validation" ? v070.active : ""} onClick={() => { setV070DiagnosticTab("validation"); setV070DiagnosticsOpen(true); }}>Validation <b>{isV0703D ? invalidCurvedDepthSlices.length : isV070Map ? validations.length : stats.mismatch || stats.cabinetRemainder ? 1 : 0}</b></button>
@@ -5806,11 +5895,6 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                       <small>{resolumeMap ? `${allSlices.length} slices across ${resolumeMap.screens.length} screens` : "Import an Advanced Output preset"}</small>
                     </button>
                     <input ref={xmlInputRef} hidden type="file" accept=".xml,text/xml" onChange={(event) => loadXml(event.target.files?.[0])} />
-                    {!resolumeMap && (
-                      <button className="panel-action demo-action" onClick={loadDemoScene}>
-                        Load beta demo scene
-                      </button>
-                    )}
                     {xmlError && <p className="warning">{xmlError}</p>}
                   </section>
                   <section className="compact-section control-groups simulation-controls">
@@ -6882,7 +6966,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                       <button onClick={() => setSimulationFitSignal((value) => value + 1)}>Fit scene</button>
                     </div>
                   </div>
-                  <ThreeSimulation key={simulationCameraSession} cameraMemory={simulationCameraMemory} renderPaused={workspaceMode !== "simulation"} outputActive={workspaceMode === "simulation" && patternOutput !== "off"}
+                  <ThreeSimulation key={simulationCameraSession} onSceneReady={startupRestoreReady && !startupViewReady ? finishStartup : undefined} cameraMemory={simulationCameraMemory} renderPaused={workspaceMode !== "simulation"} outputActive={workspaceMode === "simulation" && patternOutput !== "off"}
                     bodyAppearanceBySlice={simulationBodyBySlice}
                     slices={allSlices}
                     compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth}
@@ -7217,9 +7301,6 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                 <button className="inspector-button" onClick={createBlankProject}>
                   New blank project
                 </button>
-                <button className="inspector-button" onClick={openDemoProject}>
-                  Open demo project
-                </button>
                 <button className="inspector-button" onClick={() => void revealProjectsFolder()}>
                   Reveal Projects folder
                 </button>
@@ -7363,9 +7444,6 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
                 </button>
                 <button className="inspector-button" onClick={createBlankProject}>
                   New blank project
-                </button>
-                <button className="inspector-button" onClick={openDemoProject}>
-                  Open demo project
                 </button>
                 <button className="inspector-button" onClick={() => void revealProjectsFolder()}>
                   Reveal Projects folder

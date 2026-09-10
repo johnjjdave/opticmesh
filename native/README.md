@@ -24,3 +24,9 @@ The NDI Runtime is loaded dynamically and is distinct from the SDK required to r
 Use the native smoke scripts under `tests` to check shared memory, output, and source discovery on Windows. Tests generate their own small frames; source-reception benchmarks require an available sender. Build and test changes to native components before replacing the packaged binaries.
 
 See [third-party notices](../THIRD_PARTY_NOTICES.md) and the [Spout2 license](vendor/Spout2/LICENSE). NDI uses its vendor’s separate terms. OpticMesh’s MIT License does not replace those terms.
+
+## SpaceMouse camera adapter
+
+`spacemouse-addon.cpp` exposes cached camera state to the native 3Dconnexion Navigation Library. It never exposes object transformation setters. The Windows editor preload loads the addon; browser and windowed-output sessions do not.
+
+To rebuild, set `TDxWARE_SDK_DIR` to an extracted official 3DxWare SDK 4.0.6 directory. From `native/spacemouse`, run `pnpm dlx node-gyp rebuild --target=43.2.0 --arch=x64 --dist-url=https://electronjs.org/headers`, then copy `build/Release/lo2s-spacemouse.node` to `desktop/native`. Keep the proprietary SDK outside tracked source directories. The runtime is loaded from Windows System32 (`TDxNavLib.dll`), installed by 3DxWare.

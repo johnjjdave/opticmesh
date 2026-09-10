@@ -22,10 +22,10 @@ try {
   assert(rects.every(r=>Math.abs(r.y-rects[0].y)<1),'Buttons share one row');
   assert(rects[0].x<rects[1].x&&rects[1].x<rects[2].x);
  }
- await page.getByRole('button',{name:'Output',exact:true}).click();await page.getByRole('button',{name:'Windowed',exact:true}).click();
- await page.getByRole('region',{name:'Windowed 3D preview',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Output',exact:true}).click();await page.getByRole('button',{name:'Floating Preview',exact:true}).click();
+ await page.getByRole('region',{name:'Floating Preview',exact:true}).waitFor();
  await buttons(1).first().click();await check(1);await buttons(3).first().click();await check(3);
- await page.getByRole('button',{name:'Close windowed output',exact:true}).click();
+ await page.getByRole('button',{name:'Close Floating Preview',exact:true}).click();
  await page.getByRole('button',{name:'Pixel Map',exact:true}).click();assert.equal(await buttons(3).count(),0);
  await page.getByRole('button',{name:'3D',exact:true}).click();await check(3);
  await page.getByRole('button',{name:'File',exact:true}).click();const download=page.waitForEvent('download');await page.getByRole('button',{name:'Save As…',exact:true}).click();

@@ -1,3 +1,4 @@
+import { editorWindow, closeTestApp } from "./desktop-test-helpers.mjs";
 // Exercise the bundled worker over file: with isolated desktop project storage.
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
@@ -13,7 +14,7 @@ const wrapper = path.join(scratch, 'main.cjs');
 await fs.writeFile(wrapper, `const {app}=require('electron');app.setPath('userData',${JSON.stringify(path.join(scratch,'profile'))});app.setPath('documents',${JSON.stringify(path.join(scratch,'Documents'))});delete process.env.OPTICMESH_DEV_URL;require(${JSON.stringify(path.join(root,'desktop/electron-main.cjs'))});`);
 const app = await _electron.launch({executablePath:path.join(root,'desktop/node_modules/electron/dist/electron.exe'),args:[wrapper]});
 try {
-  const page = await app.firstWindow(), errors=[];
+  const page = await editorWindow(app), errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.getByRole('button',{name:'Guide',exact:true}).waitFor();
   assert(page.url().startsWith('file:'));
@@ -31,13 +32,13 @@ try {
   for(let i=0;i<30;i++){try{saved=JSON.parse(await fs.readFile(projectPath,'utf8'));if(saved.simulation?.models?.length)break;}catch{}await page.waitForTimeout(200);}
   assert.equal(saved?.version,4);assert.equal(saved.simulation.models.length,1);
   await page.getByRole('button',{name:'Output',exact:true}).click();
-  const opened=app.waitForEvent('window');await page.getByRole('button',{name:'Windowed',exact:true}).click();
-  const preview=await opened;await preview.getByRole('region',{name:'Windowed 3D preview',exact:true}).waitFor();
-  await preview.getByRole('button',{name:'Close windowed output',exact:true}).click();
+  const opened=app.waitForEvent('window');await page.getByRole('button',{name:'Floating Preview',exact:true}).click();
+  const preview=await opened;await preview.getByRole('region',{name:'Floating Preview',exact:true}).waitFor();
+  await preview.getByRole('button',{name:'Close Floating Preview',exact:true}).click();
   await page.getByRole('button',{name:'Guide',exact:true}).click();
   await page.getByLabel('Search manual',{exact:true}).fill('stage model import');
   await page.locator('.manual-sidebar').getByRole('link',{name:'Stage model import (v0.8.0)',exact:true}).click();
   await page.waitForFunction(()=>{const image=document.querySelector('.manual-figure img');return image?.complete&&image.naturalWidth>0;});
   assert.equal(errors.length,0,errors.join('\n'));
-  console.log('Bundled desktop worker, model import, schema 4 autosave and native Windowed preview passed.');
-} finally {await app.close();}
+  console.log('Bundled desktop worker, model import, schema 4 autosave and native Floating Preview passed.');
+} finally {await closeTestApp(app);}

@@ -6,6 +6,16 @@ Features, improvements, fixes and compatibility notes for LO2S - OpticMesh.
 
 Version 0.8.0 is a beta preview. Version 0.7.0 remains the stable Windows release and hosted web app.
 
+### Updated Windows installer — 2026-09-10
+
+- Added 3Dconnexion SpaceMouse navigation in the main 3D viewport, alongside the regular mouse. Selected models, groups and slices act as the Object-mode rotation reference. Open Tools → 3Dconnexion Settings to adjust the installed driver; SpaceMouse control does not affect Floating Preview.
+- Fit Scene and its F shortcut straighten the camera horizon after rolling the view.
+- Renamed Windowed output to **Floating Preview** throughout the app and guide.
+- Added File → Open Recent with the six most recently opened or saved projects, retained between sessions. Demo access is now exclusively File → Open Demo.
+- Opening another project asks to save unsaved work. Closing offers Cancel, Quit without saving, and Save or Save As. Startup displays a loading window while the project and opening view are prepared.
+- Fixed project names after opening and Save As, and distant first-load camera framing. Existing saved camera views are preserved.
+- Made hierarchy visibility and lock states clearer with matching highlights and distinct open/closed padlocks. Notifications use amber text and an outline while retaining their normal background and ten-second dismissal.
+
 ### Imported stages and scene editing
 
 - Import static stage geometry from MVR 1.4/1.5/1.6, GDTF 1.1/1.2, FBX, OBJ, glTF/GLB, 3DS, Collada/DAE and STL. USD-family import is experimental.
@@ -25,12 +35,12 @@ Version 0.8.0 is a beta preview. Version 0.7.0 remains the stable Windows releas
 - Added three selectable HDRI reflection environments in Scene Display. Both control rows remain synchronized, and the chosen look is saved with the project. Reflections do not replace the background or LED content.
 - Improved colour-picker responsiveness and corrected material inheritance in mixed groups.
 
-### Windowed preview and performance
+### Floating Preview and performance
 
-- Added an independent, camera-only Windowed output. The Windows preview stays above other applications and continues updating across workspace changes.
+- Added an independent, camera-only Floating Preview. The Windows preview stays above other applications and continues updating across workspace changes.
 - Move the window with its borderless top-left handle, resize from the bottom-right corner and close with the top-right button or Escape. Left-drag inside orbits, right-drag pans and the wheel zooms.
-- Pause the main viewport while Windowed output remains live. Closing the preview resumes the main viewport automatically; native output remains independently controlled.
-- Reduced repeated model loading and memory duplication when opening Windowed output. Returning from Patterns or Pixel Map retains the loaded 3D scene and camera.
+- Pause the main viewport while Floating Preview remains live. Closing the preview resumes the main viewport automatically; native output remains independently controlled.
+- Reduced repeated model loading and memory duplication when opening Floating Preview. Returning from Patterns or Pixel Map retains the loaded 3D scene and camera.
 - Improved navigation and autosave responsiveness with large imported scenes, including close-up cursor zoom. Model detail is preserved without polygon reduction.
 - Expanded Performance with UI FPS, viewport redraws, scene/drawn triangle counts, CPU and memory readings, and supported NVIDIA GPU/VRAM telemetry. Load colours distinguish normal, elevated and high readings.
 - Fixed floor/grid visibility at close zoom levels and steep camera angles.
@@ -41,7 +51,7 @@ Version 0.8.0 is a beta preview. Version 0.7.0 remains the stable Windows releas
 - Projects containing imported geometry embed it in the project file. The combined embedded-model allowance is 150 MiB; earlier supported project formats remain readable.
 - Project restore opens the Scene inspector and starts LED slices on Pattern Generator for deliberate live-source reconnection. Disconnected feeds display black instead of white.
 - Pixel Map opens with a checkerboard canvas and an import prompt when no map is loaded. Output Map selects a valid screen instead of the former blank All Screens option.
-- Added Run test sequence to Pixel Map. It continues into 3D, respects Across Map/Per Slice scope and remains live across workspaces when Windowed output is open.
+- Added Run test sequence to Pixel Map. It continues into 3D, respects Across Map/Per Slice scope and remains live across workspaces when Floating Preview is open.
 - Updated the Pixel Map icon and 3D toolbar icons, unified imported-model hierarchy styling, constrained long names, preserved expanded branches and removed redundant tools/help text from the interface.
 - Rebuilt the illustrated manual around linked sections, search, adjustable text size, enlarged screenshots and an integrated shortcut reference. Manual versioning follows the application.
 - Fixed malformed optional model attributes, worker compatibility for FBX files containing cameras/images, and triangulation of certain curved FBX extrusions. Reimport affected models to apply geometry fixes.
