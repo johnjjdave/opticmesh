@@ -1,16 +1,19 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { zoomGeometryTree } from "./zoom-geometry.ts";
 
-// Navigation needs a useful depth, not a precise triangle selection. Keep wheel
-// work bounded even for a single mesh containing millions of triangles. Detailed
-// objects use their transformed local bounds; picking/editing still use full meshes.
+// Bounds only reject candidates: hollow/concave meshes must not create invisible
+// zoom barriers. Imported meshes have shared search trees prepared on load.
+// Keep uncached triangle scans bounded; selection/editing retain their raycasts.
 const ZOOM_TRIANGLE_BUDGET = 20_000;
 export function createZoomSurfaceQuery(raycaster: THREE.Raycaster) {
   const inverse = new THREE.Matrix4(), localRay = new THREE.Ray(), point = new THREE.Vector3();
   const hits: THREE.Intersection[] = [];
+  const candidates: { object: THREE.Mesh; lowerBound: number; triangles: number }[] = [];
   return (objects: THREE.Object3D[]) => {
     let remaining = ZOOM_TRIANGLE_BUDGET, nearest = Infinity;
+    candidates.length = 0;
     for (const object of objects) {
       if (!(object instanceof THREE.Mesh) || !object.layers.test(raycaster.layers)) continue;
       let visible = true;
@@ -33,13 +36,29 @@ export function createZoomSurfaceQuery(raycaster: THREE.Raycaster) {
       // When the origin is inside a bound, its exit is not a lower bound on
       // actual surfaces. Do not cull that object's precise intersection test.
       const inside = geometry.boundingBox.containsPoint(localRay.origin);
-      if (!inside && boundDistance >= nearest) continue;
-      if (triangles <= remaining) {
+      candidates.push({ object, lowerBound: inside ? 0 : boundDistance, triangles });
+    }
+    candidates.sort((a, b) => a.lowerBound - b.lowerBound);
+    for (const { object, lowerBound, triangles } of candidates) {
+      if (lowerBound >= nearest) break;
+      const tree = zoomGeometryTree(object.geometry);
+      if (tree) {
+        inverse.copy(object.matrixWorld).invert();
+        localRay.copy(raycaster.ray).applyMatrix4(inverse);
+        // Convert near/far distances along this ray, including nonuniform scale.
+        const localScale = point.copy(raycaster.ray.origin).add(raycaster.ray.direction)
+          .applyMatrix4(inverse).distanceTo(localRay.origin);
+        const hit = tree.raycastFirst(localRay, object.material, raycaster.near * localScale, Math.min(raycaster.far, nearest) * localScale);
+        if (hit) {
+          const distance = point.copy(hit.point).applyMatrix4(object.matrixWorld).distanceTo(raycaster.ray.origin);
+          if (Number.isFinite(distance)) nearest = Math.min(nearest, distance);
+        }
+      } else if (triangles <= remaining) {
         remaining -= triangles;
         hits.length = 0;
         object.raycast(raycaster, hits);
         for (const hit of hits) if (Number.isFinite(hit.distance)) nearest = Math.min(nearest, hit.distance);
-      } else if (Number.isFinite(boundDistance)) nearest = Math.min(nearest, boundDistance);
+      }
     }
     return Number.isFinite(nearest) ? nearest : undefined;
   };

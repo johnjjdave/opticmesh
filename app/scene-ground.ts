@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const WORLD_FLOOR_SIZE_METRES = 2000;
+export const WORLD_FLOOR_SIZE_METRES = 2000;
 export const WORLD_GRID_STEP_METRES = 1;
 
 export function createSceneGround(reversedDepthBuffer: boolean) {

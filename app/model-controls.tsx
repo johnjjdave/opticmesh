@@ -68,7 +68,12 @@ export function ModelImportDialog({ onClose, onImport }: { onClose: () => void; 
   };
   const totalBytes=files.reduce((sum,file)=>sum+file.size,0);
   const candidates=files.filter(file=>MODEL_EXTENSIONS.includes(file.name.split(".").pop()!.toLowerCase()));
-  return <dialog ref={dialog} className="model-dialog" aria-labelledby="model-import-heading" onCancel={onClose}>
+  return <dialog ref={dialog} className="model-dialog" aria-labelledby="model-import-heading" onCancel={event=>{
+    // File/folder inputs bubble their own cancel event when the native chooser
+    // is dismissed. Only a cancel request on this dialog closes the import.
+    if(event.target!==event.currentTarget)return;
+    event.preventDefault();onClose();
+  }}>
     <header className="model-import-header"><UiIcon name="slice"/><h2 id="model-import-heading">Import 3D model</h2><button className="model-import-close" aria-label="Close import" title="Close import" onClick={onClose}><UiIcon name="close"/></button></header>
     <div className="model-import-body">
       <div className="model-import-settings">
@@ -152,8 +157,8 @@ export function ModelHierarchy({ models, selected, onRowSelect, onChange, query 
         onDragLeave={()=>setDrop(null)} onDrop={event=>{event.preventDefault();event.stopPropagation();setDrop(null);if(!locked)onDropItem?.(node.id,placement(event,!node.geometry));}}>
         {branch ? <button className="hierarchy-disclosure" aria-label={`Expand ${node.name}`} title={`${expanded.has(node.id) ? "Collapse" : "Expand"} ${node.name}`} aria-expanded={expanded.has(node.id)} onClick={event => {event.stopPropagation();onToggle(node.id);}}><UiIcon name={expanded.has(node.id) ? "down" : "right"} /></button> : <button className="hierarchy-type" aria-label={`Select ${node.name}`} title={`Select ${node.name}`}><UiIcon name={node.geometry ? "slice" : "group"} /></button>}
         {editing?.id===node.id ? <span className="hierarchy-name hierarchy-group-name">{!node.geometry&&<UiIcon name="group"/>}<input autoFocus aria-label="Item name" value={editing.value} onClick={e=>e.stopPropagation()} onChange={e=>setEditing({id:node.id,value:e.target.value})} onBlur={commitName} onKeyDown={e=>{e.stopPropagation();if(e.key==="Enter"){e.preventDefault();commitName();}else if(e.key==="Escape"){e.preventDefault();editRef.current=null;setEditing(null);}}}/></span> : <button className={`hierarchy-name model-name${!node.geometry && branch ? " hierarchy-group-name" : ""}`} title={node.name} onDoubleClick={event=>{event.stopPropagation();if(!locked)setEditing({id:node.id,value:node.name});}}>{!node.geometry && branch && <UiIcon name="group" />}<span>{node.name}</span></button>}
-        <button title={`${node.visible ? "Hide" : "Show"} ${node.name} in simulation`} aria-label={`Toggle visibility ${node.name}`} aria-pressed={!node.visible} onClick={event => {event.stopPropagation();onChange(models.map(m=>m.id===model.id?{...m,nodes:m.nodes.map(n=>n.id===node.id?{...n,visible:!n.visible}:n)}:m),"Change model visibility");}}><UiIcon name={node.visible ? "eye" : "hidden"} /></button>
-        <button title={`${node.locked ? "Unlock" : "Lock"} ${node.name}`} aria-label={`Toggle lock ${node.name}`} aria-pressed={node.locked} onClick={event => {event.stopPropagation();onChange(models.map(m=>m.id===model.id?{...m,nodes:m.nodes.map(n=>n.id===node.id?{...n,locked:!n.locked}:n)}:m),"Change model lock");}}><UiIcon name={node.locked ? "lock" : "unlock"} /></button>
+        <button className="hierarchy-state-toggle" title={`${node.visible ? "Hide" : "Show"} ${node.name} in simulation`} aria-label={`Toggle visibility ${node.name}`} aria-pressed={!node.visible} onClick={event => {event.stopPropagation();onChange(models.map(m=>m.id===model.id?{...m,nodes:m.nodes.map(n=>n.id===node.id?{...n,visible:!n.visible}:n)}:m),"Change model visibility");}}><UiIcon name={node.visible ? "eye" : "hidden"} /></button>
+        <button className="hierarchy-state-toggle" title={`${node.locked ? "Unlock" : "Lock"} ${node.name}`} aria-label={`Toggle lock ${node.name}`} aria-pressed={node.locked} onClick={event => {event.stopPropagation();onChange(models.map(m=>m.id===model.id?{...m,nodes:m.nodes.map(n=>n.id===node.id?{...n,locked:!n.locked}:n)}:m),"Change model lock");}}><UiIcon name={node.locked ? "lock" : "unlock"} /></button>
       </div>;
     })}<div aria-hidden="true" style={{height:Math.max(0,rows.length-start-visible.length)*rowHeight}} /></div></div>;
 

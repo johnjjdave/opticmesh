@@ -9,10 +9,12 @@ Use Node.js 22.13 or newer and pnpm. Windows x64 is required for desktop packagi
 ```sh
 corepack enable
 pnpm install --frozen-lockfile
-pnpm dev
+pnpm --dir desktop install --frozen-lockfile
+pnpm exec vite build --config desktop/vite.config.ts
+pnpm --dir desktop exec electron local-main.cjs
 ```
 
-Open the local address printed by the development server. The default route and `/v070` use the current interface.
+The local Windows launcher keeps its recovery files and preferences separate from the installed application. Rebuild the desktop interface and restart the local app after changes. The hosted web application is frozen at v0.7.0; new development targets Windows.
 
 ## Validation
 

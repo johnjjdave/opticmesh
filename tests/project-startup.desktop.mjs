@@ -1,3 +1,4 @@
+import { editorWindow, closeTestApp } from "./desktop-test-helpers.mjs";
 import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -16,7 +17,7 @@ await fs.writeFile(wrapper,`const {app}=require('electron');app.setPath('userDat
 for(let boot=0;boot<2;boot++){
  const app=await _electron.launch({executablePath:path.join(root,'desktop/node_modules/electron/dist/electron.exe'),args:[wrapper]});
  try{
-  const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const page=await editorWindow(app),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.getByRole('heading',{name:'Scene hierarchy',exact:true}).waitFor();
   assert(page.url().startsWith('file:'));
   assert.equal(await page.locator('.hierarchy-row.child').count(),6);
@@ -29,6 +30,6 @@ for(let boot=0;boot<2;boot++){
    assert.equal(saved.simulation.source,'ndi');assert.equal(saved.workspaceMode,'simulation');
   }
   assert.deepEqual(errors,[]);
- }finally{await app.close();}
+ }finally{await closeTestApp(app);}
 }
 console.log('Actual desktop startup and reopen: Scene inspector visible, all six slices restored, saved NDI/Spout replaced by Pattern Generator.');

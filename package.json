@@ -30,7 +30,8 @@
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "three-mesh-bvh": "0.9.10"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

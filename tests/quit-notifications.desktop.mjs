@@ -1,0 +1,100 @@
+import { editorWindow, closeTestApp } from './desktop-test-helpers.mjs';
+import { createRequire } from 'node:module';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const { _electron } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const root = fileURLToPath(new URL('../', import.meta.url));
+const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'opticmesh-quit-notifications-'));
+const documents = path.join(scratch, 'Documents');
+await fs.mkdir(documents);
+await fs.mkdir(path.join(root, 'work'), { recursive: true });
+const wrapper = path.join(scratch, 'main.cjs');
+await fs.writeFile(wrapper, `const {app,BrowserWindow}=require('electron');BrowserWindow.prototype.show=BrowserWindow.prototype.showInactive;app.setPath('userData',${JSON.stringify(path.join(scratch, 'profile'))});app.setPath('documents',${JSON.stringify(documents)});delete process.env.OPTICMESH_DEV_URL;require(${JSON.stringify(path.join(root, 'desktop/electron-main.cjs'))});`);
+const launch = () => _electron.launch({ executablePath: path.join(root, 'desktop/node_modules/electron/dist/electron.exe'), args: [wrapper] });
+let app = await launch();
+try {
+  const page = await editorWindow(app);
+  await page.getByText('Latest changes autosaved', { exact: true }).waitFor();
+  await page.getByLabel('Project name', { exact: true }).fill('Untitled work');
+  const close = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await close();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Quit without saving', exact: true }).waitFor();
+  assert.equal(await dialog.locator('button:focus').count(),0,'No action is selected when the dialog opens');
+  assert.equal(await dialog.locator('button:focus-visible').count(),0);
+  assert.equal(await dialog.getByRole('heading').evaluate(e=>getComputedStyle(e).outlineStyle),'none','Initial dialog focus has no visible selection outline');
+  await page.keyboard.press('Enter');
+  assert(await dialog.isVisible(),'Opening the prompt does not arm an action for Enter');
+  await dialog.screenshot({ path: path.join(root, 'work/quit-without-saving.png') });
+  const focusIs=async name=>assert(await dialog.getByRole('button',{name,exact:true}).evaluate(e=>e===document.activeElement));
+  for(const [key,name] of [['Tab','Cancel'],['ArrowRight','Quit without saving'],['ArrowDown','Save As…'],['ArrowRight','Cancel'],['Shift+Tab','Save As…'],['ArrowLeft','Quit without saving'],['ArrowUp','Cancel']]){
+    await page.keyboard.press(key);await focusIs(name);
+  }
+  assert.equal(await dialog.locator('button:focus-visible').count(),1,'Keyboard focus remains visible');
+  await page.keyboard.press('Enter');
+  await dialog.waitFor({state:'detached'});
+  assert.equal(await page.getByLabel('Project name', { exact: true }).inputValue(), 'Untitled work');
+  await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
+  await close();
+  await dialog.getByRole('button', { name: 'Save As…', exact: true }).click();
+  await dialog.getByText('Save cancelled. Your current project is still open.', { exact: true }).waitFor();
+  await focusIs('Save As…');
+  await page.keyboard.press('ArrowLeft');await focusIs('Quit without saving');
+  // Quit must not invoke a file picker, even after a cancelled Save As.
+  await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => { throw new Error('Unexpected Save As'); }; });
+  const closed = page.waitForEvent('close');
+  await dialog.getByRole('button', { name: 'Quit without saving', exact: true }).click();
+  await closed;
+  const projects = await fs.readdir(path.join(documents, 'OpticMesh/Projects'));
+  assert(projects.every(name => name.startsWith('Startup Project')), 'Quitting an unnamed project creates no named save');
+} finally { await closeTestApp(app); }
+
+app = await launch();
+try {
+  const page = await editorWindow(app), errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.getByText('Latest changes autosaved', { exact: true }).waitFor();
+  const button = name => page.getByRole('button', { name, exact: true });
+  const menu = async name => { await button('File').click(); await button(name).click(); };
+  const savedPath = path.join(scratch, 'Saved show.lo2s');
+  await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, savedPath);
+  await menu('Save As…');
+  const notice = page.getByLabel('Notifications', { exact: true });
+  await notice.getByText('Project saved', { exact: true }).waitFor();
+  const savedContents = await fs.readFile(savedPath, 'utf8');
+  const activeBox = await notice.boundingBox();
+  const colours = await notice.evaluate(element => ({ background: getComputedStyle(element).backgroundColor, text: getComputedStyle(element).color }));
+  assert.equal(colours.background, 'rgba(0, 0, 0, 0)');
+  assert.equal(colours.text, 'rgb(255, 189, 99)');
+  await page.screenshot({ path: path.join(root, 'work/amber-notification.png') });
+  await page.waitForTimeout(8500);
+  assert.equal(await notice.getByText('Project saved', { exact: true }).isVisible(), true, 'Notification is not dismissed early');
+  await notice.getByText('Project saved', { exact: true }).waitFor({ state: 'hidden', timeout: 3000 });
+  assert.deepEqual(await notice.boundingBox(), activeBox, 'Dismissal preserves notification framing');
+  await menu('Save');
+  await notice.getByText('Saved Saved show.lo2s', { exact: true }).waitFor();
+  await button('Dismiss notification').click();
+  assert.equal(await notice.getAttribute('data-active'), 'false');
+  await page.getByLabel('Project name', { exact: true }).fill('Changes not saved');
+  await app.evaluate(({ app }) => app.quit());
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).waitFor();
+  await dialog.getByRole('button', { name: 'Save As…', exact: true }).waitFor();
+  assert.equal(await dialog.locator('button:focus').count(),0,'Named projects also start with no action selected');
+  await page.keyboard.press('ArrowLeft');
+  assert(await dialog.getByRole('button',{name:'Save',exact:true}).evaluate(e=>e===document.activeElement));
+  await page.keyboard.press('ArrowLeft');
+  assert(await dialog.getByRole('button',{name:'Save As…',exact:true}).evaluate(e=>e===document.activeElement));
+  await dialog.screenshot({ path: path.join(root, 'work/quit-named-project.png') });
+  const closed = page.waitForEvent('close');
+  await dialog.getByRole('button', { name: 'Quit without saving', exact: true }).click();
+  await closed;
+  // Ignore timestamps from the explicit Save above; the project title must remain saved.
+  const saved = JSON.parse(await fs.readFile(savedPath, 'utf8'));
+  assert.deepEqual(saved.config, JSON.parse(savedContents).config);
+  assert.deepEqual(errors, []);
+} finally { await closeTestApp(app); }
+console.log('Desktop quit/notifications: unnamed quit, Cancel, cancelled Save As, named quit without overwrite, amber colour, unchanged framing, 10-second timeout and manual dismissal passed.');

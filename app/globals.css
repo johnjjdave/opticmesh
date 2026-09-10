@@ -145,6 +145,7 @@ button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disa
 .project-replacement-dialog::backdrop{background:#0009}
 .project-replacement-dialog header{padding:16px;border-bottom:1px solid var(--border-section,#343a3d);background:var(--surface-section,#191c1e)}
 .project-replacement-dialog h2{margin:0;font-size:14px;line-height:20px;font-weight:650}
+.project-replacement-dialog h2:focus{outline:none}
 .project-replacement-body{padding:16px}.project-replacement-dialog p{margin:0;color:var(--text-secondary,#aab3b6)}
 .project-replacement-dialog p[role=status]{margin-top:12px;padding-left:10px;border-left:2px solid var(--warning,#ffbd63)}
 .project-replacement-dialog footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--border-section,#343a3d);background:var(--surface-section,#191c1e)}

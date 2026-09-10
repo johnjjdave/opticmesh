@@ -44,6 +44,7 @@
 .app button{line-height:16px}
 .app :is(input,select),.app :is(strong,b,small){font-variant-numeric:tabular-nums}
 .app :is(button,input,select,a,[tabindex]):focus-visible{outline:2px solid var(--accent)!important;outline-offset:-2px}
+.app :global(.project-replacement-dialog h2):focus{outline:none!important}
 .search:focus-within,.projectInput:focus-visible,.select:focus-within,.app :global(.number-control):focus-within{border-color:var(--accent)}
 .app button:disabled,.app :is(input,select):disabled{opacity:1;color:var(--text-muted);background:var(--surface-panel);border-style:dashed;cursor:not-allowed}
 .app button:disabled :global(.ui-icon){opacity:.6}
@@ -118,6 +119,8 @@
 
 .menus section strong{font-weight:700;color:var(--text-primary)}
 .menus section button{font-weight:500}
+.menus section button[aria-pressed="true"]{background:var(--surface-hover);color:var(--text-primary)}
+.menus section button:disabled{background:var(--surface-panel);color:var(--text-muted)}
 
 /* All scene item types use the same Coordinates fieldset. */
 fieldset.transformFields{border:0;margin:0;padding:0;min-width:0}
@@ -152,3 +155,16 @@ fieldset.transformFields{border:0;margin:0;padding:0;min-width:0}
 .performancePanel .gpuReadings>div>span:first-child{color:var(--text-secondary);font-size:9px}
 
 .hdriButtons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:0 0 8px}.hdriButtons button{min-width:0;min-height:30px;padding:0 4px;border:1px solid var(--border-control);background:var(--surface-control);color:var(--text-secondary);font:650 var(--control-size)/1 Geist,Arial,sans-serif}.hdriButtons button:hover{background:var(--surface-hover);color:var(--text-primary)}.hdriButtons button.active{border-color:var(--mint);background:var(--surface-selected);color:var(--text-primary)}
+
+.recentProjects{position:relative}.menus .recentProjects>button{width:100%;justify-content:space-between;gap:18px}.menus .recentSubmenu{position:absolute;z-index:51;left:100%;top:-7px;width:280px;max-width:calc(100vw - 280px);padding:6px;border:1px solid var(--border-control);background:var(--surface-panel);box-shadow:0 15px 45px rgba(0,0,0,.6);display:flex;flex-direction:column}.menus .recentSubmenu button{width:100%;min-width:0}.menus .recentSubmenu button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.menus .recentProjects button:focus-visible{background:var(--surface-hover);color:var(--text-primary);outline:1px solid var(--border-control);outline-offset:-1px}
+
+.notifications[data-active="true"]{border-left-color:var(--warning);color:var(--warning);outline:1px solid var(--warning);outline-offset:-1px}
+.notifications[data-active="true"]>button{color:inherit}
+.notifications[data-active="true"]>button:hover{background:var(--surface-selected);color:inherit}
+.notifications[data-active="true"]>button:focus-visible{outline-color:var(--warning)}
+
+.app :global(.hierarchy-row) button:global(.hierarchy-state-toggle){color:var(--text-muted);background:transparent}
+.app :global(.hierarchy-row) button:global(.hierarchy-state-toggle):hover{color:var(--text-primary);background:var(--surface-hover)}
+.app :global(.hierarchy-row) button:global(.hierarchy-state-toggle)[aria-pressed="true"]{color:var(--accent);background:var(--surface-selected);box-shadow:inset 0 0 0 1px var(--border-control)}
+.app :global(.hierarchy-row) button:global(.hierarchy-state-toggle)[aria-pressed="true"] svg{stroke-width:2}
+.app :global(.hierarchy-row) button:global(.hierarchy-state-toggle):focus-visible{outline:1px solid var(--accent);outline-offset:-2px}

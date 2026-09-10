@@ -1,3 +1,4 @@
+import { editorWindow, closeTestApp } from "./desktop-test-helpers.mjs";
 import { confirmProjectReplacement } from "./browser-fixture.mjs";
 // Build desktop/dist first. Exercise the real Electron main/preload and native senders,
 // with temporary Documents/userData and a unique sender name.
@@ -30,7 +31,7 @@ require(${JSON.stringify(path.join(root, 'desktop/electron-main.cjs'))});
 `);
 const app = await _electron.launch({ executablePath: process.env.OPTICMESH_ELECTRON || path.join(electronModule, 'dist/electron.exe'), args: [wrapper] });
 try {
-  const page = await app.firstWindow();
+  const page = await editorWindow(app);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.getByRole('button', { name: 'Guide', exact: true }).waitFor();
@@ -48,7 +49,7 @@ try {
     requestAnimationFrame(tick);
   });
   await page.getByRole('button', { name: '3D', exact: true }).click();
-  await page.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();await confirmProjectReplacement(page);
+  await page.getByRole('button', { name: 'File', exact: true }).click(); await page.getByRole('button', { name: 'Open Demo', exact: true }).click();await confirmProjectReplacement(page);
   const menu = page.getByRole('navigation').first();
   const output = menu.getByRole('button', { name: 'Output', exact: true });
   const viewport = page.getByRole('region', { name: '3D viewport', exact: true });
@@ -88,12 +89,12 @@ try {
   console.log(`PASS desktop logo, real NDI/Spout at 1920 × 1080 / 30 fps, live navigation and All Views, async readback, and workspace shutdown. ${JSON.stringify(probe)}`);
 } catch (error) {
   console.error(error);
-  const page = await app.firstWindow();
+  const page = await editorWindow(app);
   console.error((await page.locator('body').innerText()).slice(0, 4000));
   throw error;
 } finally {
   const deadline = setTimeout(() => app.process().kill(), 10000);
-  try { await app.close(); } finally { clearTimeout(deadline); }
+  try { await closeTestApp(app); } finally { clearTimeout(deadline); }
   // Isolated recovery files remain under the printed scratch path, never in the real Documents folder.
   console.log(`Isolated test workspace: ${scratch}`);
 }

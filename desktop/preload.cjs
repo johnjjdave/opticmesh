@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const path = require("node:path");
+window.addEventListener("error", () => ipcRenderer.send("app:startup-progress", "failed"));
+window.addEventListener("unhandledrejection", () => ipcRenderer.send("app:startup-progress", "failed"));
+window.addEventListener("webglcontextlost", () => ipcRenderer.send("app:startup-progress", "failed"), true);
 
 let sharedFrames = null;
 try { sharedFrames = require(path.join(__dirname, "native", "lo2s-shared-frame.node")); } catch {}
@@ -86,7 +89,38 @@ function startSharedFrames(status) {
   return true;
 }
 
+// Only the editor preload exposes native camera navigation. The browser and
+// windowed-output preload never acquire a connection to the device.
+let spaceMouseNative = null;
+const spaceMouse = process.platform === "win32" ? {
+  open: (state) => {
+    try {
+      spaceMouseNative ||= require(path.join(__dirname, "native", "lo2s-spacemouse.node"));
+      return spaceMouseNative.open(state);
+    } catch { return false; }
+  },
+  sync: (state) => spaceMouseNative?.sync(state),
+  poll: () => spaceMouseNative?.poll() ?? null,
+  focus: (enabled) => spaceMouseNative?.focus(Boolean(enabled) && document.hasFocus() && !document.hidden),
+  // Scene replacement releases input focus, not the renderer's driver connection.
+  // Closing/reopening Navlib inside a React teardown can block its native UI
+  // cleanup. Reuse it for the next viewport and close it when this window exits.
+  close: () => spaceMouseNative?.focus(false),
+} : undefined;
+window.addEventListener("blur", () => spaceMouse?.focus(false));
+document.addEventListener("visibilitychange", () => { if (document.hidden) spaceMouse?.focus(false); });
+window.addEventListener("beforeunload", () => spaceMouseNative?.close());
+
 contextBridge.exposeInMainWorld("lo2sDesktop", {
+  spaceMouse,
+  openSpaceMouseSettings: process.platform === "win32" ? () => ipcRenderer.invoke("spacemouse:settings") : undefined,
+  startupProgress: (stage) => ipcRenderer.send("app:startup-progress", stage),
+  confirmClose: () => ipcRenderer.invoke("app:confirm-close"),
+  onCloseRequested: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("app:close-requested", listener);
+    return () => ipcRenderer.removeListener("app:close-requested", listener);
+  },
   getSystemPerformance: () => ipcRenderer.invoke("performance:snapshot"),
   windowedOutputGesture: (command) => ipcRenderer.invoke("windowed-output:gesture", command),
   chooseResolumeXml: () => ipcRenderer.invoke("resolume:choose-xml"),
@@ -98,6 +132,9 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
   compileProject: (payload) => ipcRenderer.invoke("project:compile", payload),
   overwriteProject: (projectPath, data) => ipcRenderer.invoke("project:overwrite", { path: projectPath, data }),
   openProject: () => ipcRenderer.invoke("project:open"),
+  recentProjects: () => ipcRenderer.invoke("project:recent"),
+  openRecentProject: projectPath => ipcRenderer.invoke("project:open-recent", projectPath),
+  rememberRecentProject: projectPath => ipcRenderer.invoke("project:remember-recent", projectPath),
   autosaveProjectDelta: (patch) => ipcRenderer.invoke("project:autosave-delta", patch),
   autosaveProject: (data) => ipcRenderer.invoke("project:autosave", { data }),
   autosaveProjectSync: (data) => ipcRenderer.sendSync("project:autosave-sync", { data }),

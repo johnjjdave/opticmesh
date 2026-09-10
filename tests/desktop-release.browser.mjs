@@ -1,3 +1,4 @@
+import { editorWindow, closeTestApp } from "./desktop-test-helpers.mjs";
 import { confirmProjectReplacement } from "./browser-fixture.mjs";
 // Run only on an isolated CI Windows runner after installing the candidate.
 import { createRequire } from 'node:module';
@@ -12,7 +13,7 @@ const { _electron } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODU
 const executablePath = process.env.OPTICMESH_INSTALLED_APP;
 const app = await _electron.launch({ executablePath });
 try {
-  const page = await app.firstWindow();
+  const page = await editorWindow(app);
   await page.getByRole('button', { name: 'Guide', exact: true }).waitFor();
   await page.waitForFunction(() => {
     const image = document.querySelector('img[alt="LO2S"]');
@@ -26,7 +27,7 @@ try {
     assert((await fs.stat(path.join(documents, 'OpticMesh', folder))).isDirectory());
   }
   await page.getByRole('button', { name: '3D', exact: true }).click();
-  await page.getByRole('button', { name: 'Load Demo Scene', exact: true }).click();await confirmProjectReplacement(page);
+  await page.getByRole('button', { name: 'File', exact: true }).click(); await page.getByRole('button', { name: 'Open Demo', exact: true }).click();await confirmProjectReplacement(page);
   const viewport = page.getByRole('region', { name: '3D viewport', exact: true });
   await viewport.focus();
   for (const [key, mode] of [['F2', 'top'], ['F3', 'right'], ['F4', 'front'], ['F5', 'four'], ['F1', 'perspective']]) {
@@ -52,5 +53,5 @@ try {
   }
   console.log('PASS: installed version, desktop bridge, workspace folders, 3D function keys, offline Manual, autosave, and license files.');
 } finally {
-  await app.close();
+  await closeTestApp(app);
 }

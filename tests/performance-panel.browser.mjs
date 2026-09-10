@@ -1,10 +1,11 @@
+import { editorWindow, closeTestApp } from "./desktop-test-helpers.mjs";
 import {createRequire} from 'node:module';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import {fileURLToPath} from 'node:url';
 const {chromium,_electron}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');const root=fileURLToPath(new URL('../',import.meta.url)),native=process.env.OPTICMESH_TEST_DESKTOP==='1';let browser,app,page;
 if(native){
  const scratch=await fs.mkdtemp(path.join(os.tmpdir(),'opticmesh-performance-'));await fs.mkdir(path.join(scratch,'Documents'));
  const wrapper=path.join(scratch,'main.cjs');
  await fs.writeFile(wrapper,`const {app,ipcMain}=require('electron');app.setPath('userData',${JSON.stringify(path.join(scratch,'profile'))});app.setPath('documents',${JSON.stringify(path.join(scratch,'Documents'))});process.env.OPTICMESH_DEV_URL='http://localhost:3000/';global.performanceRequests=0;const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(channel,callback)=>handle(channel,channel==='performance:snapshot'? (...args)=>{global.performanceRequests++;return callback(...args);}:callback);require(${JSON.stringify(path.join(root,'desktop/electron-main.cjs'))});`);
- app=await _electron.launch({executablePath:path.join(root,'desktop/node_modules/electron/dist/electron.exe'),args:[wrapper]});page=await app.firstWindow();
+ app=await _electron.launch({executablePath:path.join(root,'desktop/node_modules/electron/dist/electron.exe'),args:[wrapper]});page=await editorWindow(app);
 }else{browser=await chromium.launch({channel:'chrome',headless:true});page=await browser.newPage({viewport:{width:1500,height:1000}});await page.goto('http://localhost:3000/');}
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
@@ -25,4 +26,4 @@ try{
  await page.getByRole('button',{name:'Validation',exact:false}).first().click();
  if(native){await page.waitForTimeout(300);const before=await app.evaluate(()=>global.performanceRequests);await page.waitForTimeout(2200);assert.equal(await app.evaluate(()=>global.performanceRequests),before,'Closing the panel stops native polling');}
  assert.deepEqual(errors,[]);console.log('Performance live cadence, idle rendering, stall detection and telemetry lifecycle passed.');
-}finally{if(app)await app.close();if(browser)await browser.close();}
+}finally{if(app)await closeTestApp(app);if(browser)await browser.close();}

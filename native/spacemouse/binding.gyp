@@ -1,0 +1,1 @@
+{"targets":[{"target_name":"lo2s-spacemouse","sources":["../spacemouse-addon.cpp"],"include_dirs":["<!(node -p \"process.env.TDxWARE_SDK_DIR + '/inc'\")"],"defines":["NAPI_VERSION=8"],"msvs_settings":{"VCCLCompilerTool":{"ExceptionHandling":1,"AdditionalOptions":["/std:c++17"]}}}]}

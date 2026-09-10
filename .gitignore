@@ -64,3 +64,5 @@ next-env.d.ts
 
 # pnpm is the canonical dependency lockfile
 /package-lock.json
+
+/native/spacemouse/build/

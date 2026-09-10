@@ -6,6 +6,7 @@ LO2S - OpticMesh is distributed under the [MIT License](https://github.com/johnj
 | --- | --- |
 | React, React DOM, and Scheduler | MIT; copies in [public/licenses](https://github.com/johnjjdave/opticmesh/tree/main/public/licenses) |
 | Three.js | MIT; copy in [public/licenses](https://github.com/johnjjdave/opticmesh/tree/main/public/licenses) |
+| three-mesh-bvh | MIT; [license copy](https://github.com/johnjjdave/opticmesh/blob/main/public/licenses/three-mesh-bvh-MIT.txt) |
 | @xmldom/xmldom | MIT; [license copy](https://github.com/johnjjdave/opticmesh/blob/main/public/licenses/xmldom-MIT.txt) |
 | Geist and Geist Mono fonts | [SIL Open Font License 1.1](https://github.com/johnjjdave/opticmesh/blob/main/public/brand/OFL.txt) |
 | Spout2 / SpoutLibrary | [BSD 2-Clause](https://github.com/johnjjdave/opticmesh/blob/main/native/vendor/Spout2/LICENSE), copyright Lynn Jarvis |
@@ -22,4 +23,10 @@ The FBX importer includes a modified copy of Three.js 0.185.1 FBXLoader under th
 
 ## Reflection environments
 
-The three optimized HDRI reflection environments are derived from Greyscalegorilla Rio Bay Cloudy, Parking Lot Sunny and Ultimate Skies 4K 0014. They are bundled with redistribution permission supplied by the project publisher. Copyright remains with the respective rights holder; these assets are not covered by OpticMesh’s MIT License.
+The three optimized HDRI reflection environments are derived from Greyscalegorilla Rio Bay Cloudy, Parking Lot Sunny and Ultimate Skies 4K 0014. Copyright remains with the respective rights holder; these assets are not covered by OpticMesh’s MIT License.
+
+## 3Dconnexion (Windows SpaceMouse navigation)
+
+3D input device development tools and related technology are provided under license from 3Dconnexion. © 3Dconnexion 1992 - 2025. All rights reserved.
+
+The Windows camera adapter is compiled against the separately obtained 3DxWare SDK. The SDK sources and headers are not distributed with OpticMesh. The navigation runtime is supplied by the user's installed 3DxWare driver and is not included in the installer. This technology is subject to 3Dconnexion's SDK license, not OpticMesh's MIT license.

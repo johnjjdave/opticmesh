@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { prepareZoomGeometry, shareZoomGeometry } from "./zoom-geometry.ts";
 import { continuousEuler } from "./group-transforms.ts";
 import { gzipSync, gunzipSync } from "three/examples/jsm/libs/fflate.module.js";
 import { PIVOT_PRESETS, pivotOffset, type SlicePivot, type PivotPreset } from "./slice-pivot.ts";
@@ -96,6 +97,7 @@ function acquireViewGeometry(data: ModelGeometry) {
   let entry = liveGeometryCache.get(data);
   if (!entry) {
     entry = { source: modelGeometry(data), users: 0 };
+    prepareZoomGeometry(entry.source);
     liveGeometryCache.set(data, entry);
   }
   const geometry = new THREE.BufferGeometry();
@@ -109,6 +111,7 @@ function acquireViewGeometry(data: ModelGeometry) {
   }
   geometry.boundingBox = entry.source.boundingBox!.clone();
   geometry.boundingSphere = entry.source.boundingSphere!.clone();
+  shareZoomGeometry(entry.source, geometry);
   entry.users++;
   return geometry;
 }

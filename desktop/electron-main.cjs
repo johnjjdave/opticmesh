@@ -5,12 +5,32 @@ const { execFile, spawn } = require("node:child_process");
 const { fileURLToPath } = require("node:url");
 const { promisify } = require("node:util");
 const { writeCompiledProject } = require("./compile-project.cjs");
+const { createStartupWindow } = require("./startup-window.cjs");
+const editorWindows = new Map();
+let quitRequested = false;
 
 const { DesktopProjectEncoder } = require("./project-encoder.cjs");
 const { createSystemPerformance } = require("./system-performance.cjs");
 const readSystemPerformance = createSystemPerformance(() => app.getAppMetrics());
 
 const appRoot = __dirname;
+const { createRecentProjects } = require("./recent-projects.cjs");
+const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
+const rememberRecentProject = projectPath => recentProjects.remember(projectPath).catch(error => console.warn("Unable to update recent projects:", error.message));
+async function readNamedProject(projectPath) {
+  try {
+    const resolved = path.resolve(projectPath);
+    if (path.extname(resolved).toLowerCase() !== ".lo2s") throw new Error("Choose an OpticMesh .lo2s project.");
+    const stat = await fs.promises.stat(resolved);
+    if (stat.size > MAX_PROJECT_BYTES) throw new Error("This project exceeds the supported project size.");
+    const content = await fs.promises.readFile(resolved, "utf8");
+    projectBuffer({ data: Buffer.from(content, "utf8") });
+    writableProjectPaths.add(resolved);
+    return { ok: true, path: resolved, name: path.basename(resolved), content };
+  } catch (error) {
+    return { ok: false, error: error.code === "ENOENT" ? "This project could not be found. It may have been moved or deleted." : error.message };
+  }
+}
 const MAX_XML_BYTES = 32 * 1024 * 1024;
 const projectLimits = require("./project-limits.json");
 const MAX_PROJECT_BYTES = projectLimits.projectMiB * 1024 * 1024;
@@ -52,12 +72,19 @@ async function ensureWorkspaceDirectories() {
   return locations;
 }
 
-function projectBuffer(payload) {
+function projectBuffer(payload, projectTitle, inspect) {
   const data = Buffer.from(payload?.data || []);
   if (!data.length || data.length > MAX_PROJECT_BYTES) throw new Error(`The project data is empty or exceeds the ${projectLimits.projectMiB} MiB safety limit.`);
   const parsed = JSON.parse(data.toString("utf8"));
   if (parsed?.format !== "opticmesh-project") throw new Error("The project data is not a LO2S - OpticMesh project.");
   if (Number(parsed.version || 1) > SUPPORTED_PROJECT_SCHEMA) throw new Error(`This project uses schema ${parsed.version}, but this version supports up to schema ${SUPPORTED_PROJECT_SCHEMA}.`);
+  inspect?.(parsed);
+  if (projectTitle) {
+    parsed.config = { ...parsed.config, project: projectTitle };
+    const renamed = Buffer.from(JSON.stringify(parsed), "utf8");
+    if (renamed.length > MAX_PROJECT_BYTES) throw new Error(`The project exceeds the ${projectLimits.projectMiB} MiB safety limit.`);
+    return renamed;
+  }
   return data;
 }
 
@@ -414,11 +441,25 @@ function createWindow() {
     },
   });
 
-  window.once("ready-to-show", () => window.show());
+  const state = { window, ready: false, allowClose: false, closePending: false, splash: null };
+  editorWindows.set(window.webContents.id, state);
+  state.splash = createStartupWindow(appRoot, () => window.destroy(), () => loadEditor());
+  window.on("close", event => {
+    if (state.allowClose || window.webContents.isDestroyed() || window.webContents.isCrashed()) return;
+    if (!state.ready) return; // No editing has been possible during startup.
+    event.preventDefault();
+    state.closePending = true;
+    window.webContents.send("app:close-requested");
+  });
+  window.webContents.on("did-fail-load", (_event, code, _description, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3) state.splash?.update("OpticMesh could not start. Please try again.", true);
+  });
+  window.webContents.on("render-process-gone", () => state.splash?.update("OpticMesh could not finish loading. Please try again.", true));
+  window.once("closed", () => { state.splash?.close(); for (const [id, entry] of editorWindows) if (entry === state) editorWindows.delete(id); });
   window.webContents.setWindowOpenHandler(({ url, frameName }) => {
     if (url === "about:blank" && frameName === "opticmesh-windowed-output") {
       return { action: "allow", overrideBrowserWindowOptions: {
-        title: "OpticMesh — Windowed output", width: 640, height: 360, minWidth: 240, minHeight: 160,
+        title: "OpticMesh — Floating Preview", width: 640, height: 360, minWidth: 240, minHeight: 160,
         frame: false, thickFrame: false, roundedCorners: false, resizable: false, maximizable: false, fullscreenable: false,
         alwaysOnTop: true, autoHideMenuBar: true, backgroundColor: "#090b0c",
         webPreferences: { preload: path.join(appRoot, "windowed-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
@@ -452,14 +493,31 @@ function createWindow() {
   });
   window.on("closed", () => { stopResolumeLink(); void stopNativeSource(); void stopNativeOutput(); });
   const localDevUrl = !app.isPackaged && process.env.OPTICMESH_DEV_URL;
-  if (localDevUrl) {
-    const parsed = new URL(localDevUrl);
-    if (parsed.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) throw new Error("Development preview must use localhost.");
-    window.loadURL(parsed.href);
-  } else window.loadFile(path.join(appRoot, "dist", "index.html"));
+  const loadEditor = () => {
+    if (localDevUrl) {
+      const parsed = new URL(localDevUrl);
+      if (parsed.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) throw new Error("Development preview must use localhost.");
+      void window.loadURL(parsed.href).catch(() => {}); // did-fail-load offers Retry.
+    } else void window.loadFile(path.join(appRoot, "dist", "index.html")).catch(() => {});
+  };
+  loadEditor();
 }
 
 app.whenReady().then(async () => {
+  ipcMain.on("app:startup-progress", (event, stage) => {
+    const state = editorWindows.get(event.sender.id);
+    if (!state || state.ready) return;
+    if (stage === "project") state.splash?.update("Opening your project…");
+    else if (stage === "scene") state.splash?.update("Preparing your 3D view…");
+    else if (stage === "failed") state.splash?.update("OpticMesh could not finish loading. Please try again.", true);
+    else if (stage === "ready") { state.ready = true; state.window.show(); state.splash?.close(); state.splash = null; }
+  });
+  ipcMain.handle("app:confirm-close", event => {
+    const state = editorWindows.get(event.sender.id);
+    if (!state?.closePending) return;
+    state.allowClose = true;
+    if (quitRequested) app.quit(); else state.window.close();
+  });
   try { await ensureWorkspaceDirectories(); }
   catch (error) { console.error("Unable to prepare the OpticMesh workspace:", error); }
   try { await prepareNativeBridge(); }
@@ -591,6 +649,23 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("output:stop", async () => { await stopNativeOutput(); return { ok: true }; });
+  ipcMain.handle("spacemouse:settings", async (event) => {
+    if (process.platform !== "win32" || !editorWindows.has(event.sender.id)) return { ok: false, error: "3Dconnexion settings are available in the Windows editor." };
+    // Use the same command as 3Dconnexion Home, preserving the driver's profile controls.
+    let directory = path.join(process.env.ProgramFiles || "C:\\Program Files", "3Dconnexion", "3DxWare", "3DxWinCore");
+    try {
+      const { stdout } = await promisify(execFile)("reg.exe", ["query", "HKLM\\SOFTWARE\\3Dconnexion\\3DxWare", "/v", "Home Directory"], { windowsHide: true });
+      const match = stdout.match(/Home Directory\s+REG_SZ\s+(.+)/);
+      if (match) directory = match[1].trim();
+    } catch { /* Use the standard driver installation when no registry entry exists. */ }
+    const executable = path.join(directory, "3DxService.exe");
+    if (!fs.existsSync(executable)) return { ok: false, error: "Install 3Dconnexion 3DxWare to access SpaceMouse settings." };
+    return new Promise(resolve => {
+      const child = spawn(executable, ["-showGUI"], { windowsHide: true, stdio: "ignore" });
+      child.once("error", error => resolve({ ok: false, error: error.message }));
+      child.once("spawn", () => { child.unref(); resolve({ ok: true }); });
+    });
+  });
   ipcMain.handle("app:check-update", checkForUpdate);
   ipcMain.handle("app:open-external", async (_event, requestedUrl) => {
     const url = new URL(String(requestedUrl || ""));
@@ -636,10 +711,13 @@ app.whenReady().then(async () => {
     });
     if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
     try {
-      await atomicWriteProject(result.filePath, projectBuffer(payload));
+      const projectTitle = path.basename(result.filePath).toLowerCase() === filename.toLowerCase()
+        ? undefined : path.basename(result.filePath, path.extname(result.filePath));
+      await atomicWriteProject(result.filePath, projectBuffer(payload, projectTitle));
       await rememberExportDirectory("project", result.filePath);
       writableProjectPaths.add(path.resolve(result.filePath));
-      return { ok: true, path: result.filePath };
+      await rememberRecentProject(result.filePath);
+      return { ok: true, path: result.filePath, projectTitle };
     } catch (error) {
       return { ok: false, error: error.message };
     }
@@ -688,14 +766,19 @@ app.whenReady().then(async () => {
       filters: [{ name: "LO2S - OpticMesh project", extensions: ["lo2s"] }],
     });
     if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
-    try {
-      const content = await fs.promises.readFile(result.filePaths[0], "utf8");
-      projectBuffer({ data: Buffer.from(content, "utf8") });
-      writableProjectPaths.add(path.resolve(result.filePaths[0]));
-      return { ok: true, path: result.filePaths[0], name: path.basename(result.filePaths[0]), content };
-    } catch (error) {
-      return { ok: false, error: error.message };
-    }
+    return readNamedProject(result.filePaths[0]);
+  });
+
+  ipcMain.handle("project:recent", () => recentProjects.list());
+  ipcMain.handle("project:remember-recent", async (_event, requestedPath) => {
+    const resolved = path.resolve(String(requestedPath || ""));
+    if (!writableProjectPaths.has(resolved)) return { ok: false };
+    await rememberRecentProject(resolved); return { ok: true };
+  });
+  ipcMain.handle("project:open-recent", async (_event, requestedPath) => {
+    const match = (await recentProjects.list()).find(item => item.path.toLowerCase() === String(requestedPath).toLowerCase());
+    if (!match) return { ok: false, error: "This project is no longer in Open Recent. Use Open Project to locate it." };
+    return readNamedProject(match.path);
   });
 
   ipcMain.handle("project:overwrite", async (_event, payload) => {
@@ -703,6 +786,7 @@ app.whenReady().then(async () => {
       const targetPath = path.resolve(String(payload?.path || ""));
       if (path.extname(targetPath).toLowerCase() !== ".lo2s" || !writableProjectPaths.has(targetPath)) throw new Error("This project is not an active named project. Use Save As first.");
       await atomicWriteProject(targetPath, projectBuffer(payload));
+      await rememberRecentProject(targetPath);
       return { ok: true, path: targetPath, savedAt: Date.now() };
     } catch (error) {
       return { ok: false, error: error.message };
@@ -756,8 +840,16 @@ app.whenReady().then(async () => {
     for (const candidate of [locations.startupProject, locations.previousStartupProject]) {
       try {
         const content = await fs.promises.readFile(candidate, "utf8");
-        projectBuffer({ data: Buffer.from(content, "utf8") });
-        return { ok: true, restored: true, recoveryUsed: candidate === locations.previousStartupProject, path: candidate, content };
+        let desktopSession;
+        projectBuffer({ data: Buffer.from(content, "utf8") }, undefined, parsed => { desktopSession = parsed.desktopSession; });
+        let activeProjectPath;
+        if (typeof desktopSession?.projectPath === "string" && path.isAbsolute(desktopSession.projectPath) && path.extname(desktopSession.projectPath).toLowerCase() === ".lo2s") {
+          const target = path.resolve(desktopSession.projectPath);
+          if (target !== locations.startupProject && target !== locations.previousStartupProject) {
+            try { if ((await fs.promises.stat(target)).isFile()) { activeProjectPath = target; writableProjectPaths.add(target); } } catch {}
+          }
+        }
+        return { ok: true, restored: true, recoveryUsed: candidate === locations.previousStartupProject, path: candidate, content, activeProjectPath, unsavedChanges: desktopSession?.unsavedChanges !== false || Boolean(desktopSession?.projectPath && !activeProjectPath) };
       } catch (error) {
         if (error.code !== "ENOENT") console.error(`Unable to restore ${candidate}:`, error);
       }
@@ -780,5 +872,9 @@ app.whenReady().then(async () => {
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on("before-quit", () => { stopResolumeLink(); void stopNativeSource(); void stopNativeOutput(); });
+app.on("before-quit", event => {
+  const pending = [...editorWindows.values()].find(state => state.ready && !state.allowClose && !state.window.webContents.isCrashed());
+  if (pending) { event.preventDefault(); quitRequested = true; pending.window.close(); }
+});
+app.on("will-quit", () => { stopResolumeLink(); void stopNativeSource(); void stopNativeOutput(); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

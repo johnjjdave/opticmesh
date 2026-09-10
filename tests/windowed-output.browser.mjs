@@ -1,3 +1,4 @@
+import { editorWindow, closeTestApp } from "./desktop-test-helpers.mjs";
 // Exercise real camera/rendering and window gestures against localhost. Desktop mode
 // uses the actual main/preload in an isolated development session, never an installer.
 import { createRequire } from 'node:module';
@@ -19,7 +20,7 @@ if (native) {
   await fs.writeFile(wrapper, `const {app}=require('electron');app.setPath('userData',${JSON.stringify(path.join(scratch, 'profile'))});app.setPath('documents',${JSON.stringify(path.join(scratch, 'Documents'))});process.env.OPTICMESH_DEV_URL=${JSON.stringify(url)};require(${JSON.stringify(path.join(root, 'desktop/electron-main.cjs'))});`);
   app = await _electron.launch({ executablePath: path.join(root, 'desktop/node_modules/electron/dist/electron.exe'), args: [wrapper] });
   app.process().stderr.on('data', chunk => { if (String(chunk).includes('Error')) console.log(String(chunk)); });
-  page = await app.firstWindow();
+  page = await editorWindow(app);
 } else {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
@@ -33,7 +34,7 @@ try {
   if (!native) await page.getByText('Manual save only', { exact: true }).waitFor();
   await page.waitForTimeout(1200);
   await button('Output').click();
-  assert(await button('Windowed').isDisabled(), '3D-only output');
+  assert(await button('Floating Preview').isDisabled(), '3D-only output');
   await page.keyboard.press('Escape');
   await loadRegressionScene(page, '3d');
   await button('Select Centre Wall').click();
@@ -41,14 +42,14 @@ try {
   await page.waitForTimeout(700);
   await button('Output').click();
   const opened = native ? app.waitForEvent('window') : null;
-  await button('Windowed').click();
+  await button('Floating Preview').click();
   const previewPage = native ? await opened : page;
   if (native) previewPage.on('pageerror', error => errors.push(error.message));
-  const panel = previewPage.getByRole('region', { name: 'Windowed output', exact: true });
-  const preview = previewPage.getByRole('region', { name: 'Windowed 3D preview', exact: true });
+  const panel = previewPage.getByRole('region', { name: 'Floating Preview window', exact: true });
+  const preview = previewPage.getByRole('region', { name: 'Floating Preview', exact: true });
   await preview.waitFor(); await previewPage.waitForTimeout(800);
   // Keep resize bounds away from the physical cursor, which can emit native hover events during CDP gestures.
-  if (native) await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Windowed output')).setPosition(20,20));
+  if (native) await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Floating Preview')).setPosition(20,20));
   if (native) assert.equal(await previewPage.evaluate(() => typeof window.lo2sDesktop), 'undefined', 'preview has no desktop editing/filesystem bridge');
   const pixels = view => view.locator('canvas').evaluate(canvas => canvas.toDataURL());
   const imageDifference = (a, b) => previewPage.evaluate(async ([left, right]) => {
@@ -95,17 +96,17 @@ try {
   assert.deepEqual(await fields(), originalFields, 'editing shortcuts cannot alter scene');
   assert.equal(await pixels(editor), originalEditor, 'preview gestures leave editor unchanged');
   const nativeBounds = () => app.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('Windowed output'));
+    const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('Floating Preview'));
     return { ...win.getBounds(), top: win.isAlwaysOnTop(), resizable: win.isResizable(), maximizable: win.isMaximizable() };
   });
   const beforeMove = native ? await nativeBounds() : await panel.boundingBox();
   if (native) {
     assert(beforeMove.top); assert.equal(beforeMove.resizable, false); assert.equal(beforeMove.maximizable, false);
   }
-  const handle = previewPage.getByRole('button', { name: 'Move windowed output', exact: true });
+  const handle = previewPage.getByRole('button', { name: 'Move Floating Preview', exact: true });
   const handleBox = await handle.boundingBox();
   assert.equal(handleBox.width, 24); assert.equal(handleBox.height, 24);
-  for (const control of [handle, previewPage.getByRole('button', { name: 'Close windowed output', exact: true })]) {
+  for (const control of [handle, previewPage.getByRole('button', { name: 'Close Floating Preview', exact: true })]) {
     assert.equal(await control.evaluate(el => getComputedStyle(el).borderTopWidth), '0px');
   }
   // The padded button area owns movement, not just the SVG strokes.
@@ -113,11 +114,11 @@ try {
   const afterMove = native ? await nativeBounds() : await panel.boundingBox();
   assert(afterMove.x > beforeMove.x + 20 && afterMove.y > beforeMove.y + 10, 'move handle drags window');
   assert.equal(afterMove.width, beforeMove.width);
-  const resize = await previewPage.getByRole('button', { name: 'Resize windowed output' }).boundingBox();
+  const resize = await previewPage.getByRole('button', { name: 'Resize Floating Preview' }).boundingBox();
   await drag(resize.x + 12, resize.y + 12, 100, 60);
   const afterResize = native ? await nativeBounds() : await panel.boundingBox();
   assert(afterResize.width > afterMove.width + 30 && afterResize.height > afterMove.height + 20, 'bottom-right grows');
-  const shrink = await previewPage.getByRole('button', { name: 'Resize windowed output' }).boundingBox();
+  const shrink = await previewPage.getByRole('button', { name: 'Resize Floating Preview' }).boundingBox();
   await drag(shrink.x + 12, shrink.y + 12, -60, -30);
   const afterShrink = native ? await nativeBounds() : await panel.boundingBox();
   assert(afterShrink.width < afterResize.width && afterShrink.height < afterResize.height, 'bottom-right shrinks');
@@ -174,15 +175,15 @@ try {
   assert.deepEqual(native ? await nativeBounds() : await panel.boundingBox(), retainedBounds, 'window bounds stay intact');
   assert(!errors.length, errors.join('\n'));
   const closing = native ? previewPage.waitForEvent('close') : null;
-  await previewPage.getByRole('button', { name: 'Close windowed output' }).click();
+  await previewPage.getByRole('button', { name: 'Close Floating Preview' }).click();
   if (native) await closing;
   else await panel.waitFor({ state: 'detached' });
   await button('Output').click();
-  assert.equal(await button('Windowed').getAttribute('aria-pressed'), 'false');
+  assert.equal(await button('Floating Preview').getAttribute('aria-pressed'), 'false');
   const nextWindow = native ? app.waitForEvent('window') : null;
-  await button('Windowed').click();
+  await button('Floating Preview').click();
   const nextPreview = native ? await nextWindow : page;
-  await nextPreview.getByRole('region', {name:'Windowed output', exact:true}).waitFor();
+  await nextPreview.getByRole('region', {name:'Floating Preview', exact:true}).waitFor();
   if (!native) {
     const nextBox = await panel.boundingBox();
     await drag(nextBox.x + 12, nextBox.y + 12, 680, 0); // Move handle uncovers the application menu.
@@ -192,27 +193,27 @@ try {
   if (native) assert.equal((await app.windows()).length, 2, 'workspace switch retains native preview');
   else assert.equal(await page.locator('.windowed-output').count(), 1);
   await button('Output').click();
-  assert(await button('Windowed').isEnabled(), 'active preview can be closed from Patterns');
-  assert.equal(await button('Windowed').getAttribute('aria-pressed'), 'true');
+  assert(await button('Floating Preview').isEnabled(), 'active preview can be closed from Patterns');
+  assert.equal(await button('Floating Preview').getAttribute('aria-pressed'), 'true');
   const toggledClosed = native ? nextPreview.waitForEvent('close') : null;
-  await button('Windowed').click();
+  await button('Floating Preview').click();
   if (native) await toggledClosed;
   else await panel.waitFor({state:'detached'});
   await button('3D').click();
   await button('Output').click();
   const reopened = native ? app.waitForEvent('window') : null;
-  await button('Windowed').click();
+  await button('Floating Preview').click();
   const escapePage = native ? await reopened : page;
-  const escapePanel = escapePage.getByRole('region', { name: 'Windowed output', exact: true });
+  const escapePanel = escapePage.getByRole('region', { name: 'Floating Preview', exact: true });
   await escapePanel.waitFor(); await escapePanel.focus();
   const escaped = native ? escapePage.waitForEvent('close') : null;
   await escapePage.keyboard.press('Escape');
   if (native) await escaped;
   else await escapePanel.waitFor({ state: 'detached' });
   assert(!errors.length, errors.join('\n'));
-  console.log(`${native ? 'Windows' : 'Browser'} windowed output: camera-only, sync, move, resize, close and lifecycle checks passed.`);
+  console.log(`${native ? 'Windows' : 'Browser'} Floating Preview: camera-only, sync, move, resize, close and lifecycle checks passed.`);
 } catch (error) {
   console.log('Renderer errors', errors);
   if (!page.isClosed()) console.log('Editor state', (await page.locator('body').innerText()).slice(0,650));
   throw error;
-} finally { await app?.close(); await browser?.close(); }
+} finally { if(app)await closeTestApp(app); await browser?.close(); }

@@ -24,7 +24,7 @@ try {
     for (const name of ['drawArrays', 'drawElements']) {
       const draw = WebGL2RenderingContext.prototype[name];
       WebGL2RenderingContext.prototype[name] = function (...args) {
-        if (this.canvas.closest?.('[aria-label="Windowed 3D preview"]') && window.viewStats.sharedBytes && window.viewStats.modelFirstDrawMs === null)
+        if (this.canvas.closest?.('[aria-label="Floating Preview"]') && window.viewStats.sharedBytes && window.viewStats.modelFirstDrawMs === null)
           window.viewStats.modelFirstDrawMs = performance.now() - window.viewStats.start;
         return draw.apply(this, args);
       };
@@ -50,14 +50,14 @@ try {
   for (let cycle = 0; cycle < 2; cycle++) {
     await button('Output').click();
     await page.evaluate(() => { window.viewStats = { decodedChars: 0, sharedBytes: 0, modelFirstDrawMs: null, start: performance.now() }; });
-    await button('Windowed').click();
+    await button('Floating Preview').click();
     await page.waitForFunction(() => window.viewStats.modelFirstDrawMs !== null, {}, { timeout: 60000 });
     await page.waitForTimeout(500);
     const stats = await page.evaluate(() => { const stats = { ...window.viewStats }; window.viewStats.start = 0; return stats; });
     assert.equal(stats.decodedChars, 0, 'Opening another view does not decode the model again');
     assert(stats.sharedBytes > 0, 'Preview GPU uploads reuse the existing CPU model arrays');
     samples.push(stats);
-    await button('Close windowed output').click();
+    await button('Close Floating Preview').click();
     // Force a main-viewport redraw after disposing the preview GPU geometry.
     await button('Floor').first().click(); await button('Floor').first().click();
     await page.waitForTimeout(300);

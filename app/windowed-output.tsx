@@ -48,7 +48,7 @@ export default function WindowedOutput({ scene, onClose }: { scene: SimulationPr
       if (bridge?.windowedOutputGesture) {
         child = window.open("about:blank", "opticmesh-windowed-output", "width=640,height=360");
         if (!child) { closeRef.current(); return; }
-        child.document.title = "OpticMesh — Windowed output";
+        child.document.title = "OpticMesh — Floating Preview";
         child.document.body.style.cssText = "margin:0;background:#090b0c;overflow:hidden";
         setNative(true);
         setTarget(child.document.body);
@@ -121,7 +121,7 @@ export default function WindowedOutput({ scene, onClose }: { scene: SimulationPr
     void bridgeRef.current?.windowedOutputGesture?.({ action: "end" });
   };
   if (!target) return null;
-  return createPortal(<><style>{previewStyle}</style><div ref={shell} className="windowed-output" role="region" aria-label="Windowed output" tabIndex={0}
+  return createPortal(<><style>{previewStyle}</style><div ref={shell} className="windowed-output" role="region" aria-label="Floating Preview window" tabIndex={0}
     title="Top-left handle move · Left-drag orbit · Right-drag pan · Wheel zoom · Bottom-right corner resize · Escape close"
     style={native ? { inset: 0, width: "100%", height: "100%", boxShadow: "none" } : bounds}
     onPointerDownCapture={start} onPointerMoveCapture={move} onPointerUpCapture={end} onPointerCancelCapture={end} onContextMenu={(event) => event.preventDefault()}>
@@ -129,8 +129,8 @@ export default function WindowedOutput({ scene, onClose }: { scene: SimulationPr
       cameraState={initialCamera} cameraMemory={undefined} viewMode="perspective" fitSignal={0} focusSignal={0}
       onSelectionChange={ignore} onTransformPreview={ignore} onTransformsChange={ignore} onCameraChange={ignore}
       onOutputCaptureReady={undefined} performanceMetrics={undefined} />
-    <button className="windowed-output-move" aria-label="Move windowed output" title="Drag to move windowed output"><UiIcon name="move" style={{ width: 16, height: 16 }} /></button>
-    <button className="windowed-output-close" aria-label="Close windowed output" title="Close windowed output (Escape)" onClick={onClose}>×</button>
-    <button className="windowed-output-resize" aria-label="Resize windowed output" title="Drag to resize windowed output" tabIndex={-1} />
+    <button className="windowed-output-move" aria-label="Move Floating Preview" title="Drag to move Floating Preview"><UiIcon name="move" style={{ width: 16, height: 16 }} /></button>
+    <button className="windowed-output-close" aria-label="Close Floating Preview" title="Close Floating Preview (Escape)" onClick={onClose}>×</button>
+    <button className="windowed-output-resize" aria-label="Resize Floating Preview" title="Drag to resize Floating Preview" tabIndex={-1} />
   </div></>, target);
 }
