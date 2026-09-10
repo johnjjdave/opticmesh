@@ -47,7 +47,8 @@
     },
     "files": [
       "dist/**/*",
-      "icons/**/*",
+      "icons/icon.png",
+      "icons/icon.ico",
       "native/**/*",
       "electron-main.cjs",
       "startup-window.cjs",
