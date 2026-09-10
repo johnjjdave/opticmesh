@@ -6,13 +6,13 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
  const page=await browser.newPage({viewport:{width:1600,height:1000}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://localhost:3000/');await page.getByText('Manual save only',{exact:true}).waitFor();
+ await page.goto(process.env.OPTICMESH_TEST_URL || 'http://localhost:3000/');await page.getByText('Manual save only',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Guide',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'OpticMesh Manual',exact:true}),nav=dialog.getByRole('navigation',{name:'Manual sections',exact:true}),content=dialog.getByRole('article',{name:'Manual content',exact:true});
- assert(await dialog.getByText('Version 0.8.0',{exact:true}).isVisible());
+ assert(await dialog.getByText('Version 0.9.0',{exact:true}).isVisible());
  assert.equal(await dialog.getByText(/Manual version: 0.1|Living Beta documentation|Applies to:/).count(),0);
  assert.equal(await content.evaluate(e=>getComputedStyle(e).fontSize),'16px');
- const headings=(await fs.readFile('MANUAL.md','utf8')).split(/\r?\n/).filter(l=>/^#{2,3} /.test(l)&&l!=='## Contents');
+ const headings=(await fs.readFile('app/manual-content.md','utf8')).split(/\r?\n/).filter(l=>/^#{2,3} /.test(l)&&l!=='## Contents');
  const slug=s=>s.replace(/^#+ /,'').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1').toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s/g,'-');
  let chapter;
  for(const heading of headings){
@@ -27,7 +27,7 @@ try{
 
  }
  await dialog.getByLabel('Search manual',{exact:true}).fill('stage model import');
- await nav.getByRole('link',{name:'Stage model import (v0.8.0)',exact:true}).click();
+ await nav.getByRole('link',{name:'Stage model import',exact:true}).click();
  assert(await content.getByRole('button',{name:/Enlarge:/}).isVisible());
  assert(await content.locator('img').evaluate(e=>e.complete&&e.naturalWidth>0));
  await dialog.getByLabel('Manual text size').selectOption('20');assert.equal(await content.evaluate(e=>getComputedStyle(e).fontSize),'20px');

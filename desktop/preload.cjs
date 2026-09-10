@@ -139,6 +139,8 @@ contextBridge.exposeInMainWorld("lo2sDesktop", {
   autosaveProject: (data) => ipcRenderer.invoke("project:autosave", { data }),
   autosaveProjectSync: (data) => ipcRenderer.sendSync("project:autosave-sync", { data }),
   loadStartupProject: () => ipcRenderer.invoke("project:load-startup"),
+  getPlotPrinters: () => ipcRenderer.invoke('plots:printers'),
+  printTechnicalPlots: payload => ipcRenderer.invoke('plots:print', payload),
   getWorkspacePaths: () => ipcRenderer.invoke("workspace:paths"),
   revealProjectsFolder: () => ipcRenderer.invoke("workspace:reveal-projects"),
   startPatternOutput: (kind, name) => ipcRenderer.invoke("output:start", { kind, name }),

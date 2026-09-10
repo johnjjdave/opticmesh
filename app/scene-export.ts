@@ -80,7 +80,7 @@ function deterministicUuid(value: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function buildScene(options: SceneExportOptions): BuiltScene {
+export function buildScene(options: SceneExportOptions): BuiltScene {
   const scene = new THREE.Scene();
   scene.name = options.projectName;
   const root = new THREE.Group();
@@ -189,7 +189,7 @@ function buildScene(options: SceneExportOptions): BuiltScene {
   return { scene, texture, textureCanvas, meshesBySlice, triangleCount };
 }
 
-function disposeBuiltScene(built: BuiltScene) {
+export function disposeBuiltScene(built: BuiltScene) {
   built.scene.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
     object.geometry.dispose();

@@ -66,3 +66,7 @@ next-env.d.ts
 /package-lock.json
 
 /native/spacemouse/build/
+
+# Local preview launchers
+/desktop/local-v090.cjs
+/desktop/scripts/launch-v090.cjs

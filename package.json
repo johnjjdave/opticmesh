@@ -1,8 +1,8 @@
 {
   "name": "opticmesh",
-  "version": "0.8.0-beta",
+  "version": "0.9.0-beta",
   "private": true,
-  "description": "LO2S - OpticMesh LED test-pattern, Resolume pixel-map, and 3D simulation workspace.",
+  "description": "LO2S - OpticMesh LED test-pattern, Resolume pixel-map, 3D simulation, and technical-plot workspace.",
   "license": "MIT",
   "repository": {
     "type": "git",

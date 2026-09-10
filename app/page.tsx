@@ -1,5 +1,9 @@
 "use client";
 
+import { evaluateExpression } from "./expression";
+import TechnicalPlots from "./technical-plots";
+import { defaultPlotDocument, readPlotDocument, type PlotSource } from "./technical-plots-data";
+import type { SceneExportOptions } from "./scene-export";
 import RecentProjectsMenu, { type RecentProject } from "./recent-projects-menu";
 import { reflectionPreset, type ReflectionPreset } from "./studio-environment";
 import { ProjectEncoder, ProjectSnapshotTracker, type ProjectPatch } from "./project-encoder";
@@ -51,7 +55,7 @@ type PatternType = "metric" | "cabinet" | "color" | "gray" | "pixel";
 type ProjectionFormat = "planar" | "dome" | "cubemap" | "equirectangular" | "cylindrical";
 type DomeBackground = "black" | "grayscale" | "spectrum" | "uv" | "transparent" | "custom";
 type DomeRingWeight = "thin" | "medium" | "bold";
-type WorkspaceMode = "patterns" | "resolume" | "simulation";
+type WorkspaceMode = "patterns" | "resolume" | "simulation" | "plots";
 type MapView = "input" | "output";
 type ControlTab = "setup" | "overlays" | "info" | "deco" | "logo" | "scene" | "sources";
 type FullscreenMode = "fit" | "actual";
@@ -528,7 +532,7 @@ function patternStyleFromConfig(config: PatternConfig): PatternStyle {
 
 // Local iteration identifies the active milestone without changing release metadata.
 const LOCAL_PREVIEW = process.env.NODE_ENV === "development";
-const DISPLAY_VERSION = LOCAL_PREVIEW ? "0.8.0" : packageMetadata.version.replace(/^v/i, "").replace(/-beta.*$/i, "");
+const DISPLAY_VERSION = LOCAL_PREVIEW ? "0.9.0" : packageMetadata.version.replace(/^v/i, "").replace(/-beta.*$/i, "");
 const BUILD_BADGE = "Beta";
 const BUILD_DESCRIPTION = LOCAL_PREVIEW ? "Local development preview" : "Beta";
 const TransformSelectionScope = createContext("");
@@ -630,64 +634,6 @@ function normalizeSourceOverrides(value: unknown): Record<string, "inherit" | Si
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([id, source]) => [id, source === "inherit" ? "inherit" : normalizeSimulationSource(source)]));
 }
 
-function evaluateExpression(source: string, allowSigned = false): number | null {
-  const text = source.replace(/[×x]/gi, "*").replace(/÷/g, "/").replace(/,/g, "").trim();
-  if (!text || !/^[\d.+\-*/()\s]+$/.test(text)) return null;
-  let index = 0;
-  const skip = () => {
-    while (/\s/.test(text[index] ?? "")) index += 1;
-  };
-  const expression = (): number => {
-    let value = term();
-    while (true) {
-      skip();
-      const op = text[index];
-      if (op !== "+" && op !== "-") break;
-      index += 1;
-      const next = term();
-      value = op === "+" ? value + next : value - next;
-    }
-    return value;
-  };
-  const term = (): number => {
-    let value = factor();
-    while (true) {
-      skip();
-      const op = text[index];
-      if (op !== "*" && op !== "/") break;
-      index += 1;
-      const next = factor();
-      value = op === "*" ? value * next : value / next;
-    }
-    return value;
-  };
-  const factor = (): number => {
-    skip();
-    if (text[index] === "+" || text[index] === "-") {
-      const sign = text[index++] === "-" ? -1 : 1;
-      return sign * factor();
-    }
-    if (text[index] === "(") {
-      index += 1;
-      const value = expression();
-      skip();
-      if (text[index] !== ")") throw new Error("Missing parenthesis");
-      index += 1;
-      return value;
-    }
-    const match = text.slice(index).match(/^(?:\d+\.?\d*|\.\d+)/);
-    if (!match) throw new Error("Expected number");
-    index += match[0].length;
-    return Number(match[0]);
-  };
-  try {
-    const result = expression();
-    skip();
-    return index === text.length && Number.isFinite(result) && (allowSigned || result > 0) ? result : null;
-  } catch {
-    return null;
-  }
-}
 
 function ExpressionField({ label, value, suffix, onCommit, scopeKey = "global", integer = false, min = integer ? 1 : 0.0001, max = Number.POSITIVE_INFINITY }: { label: string; value: number | null; suffix: string; onCommit: (value: number) => void; scopeKey?: string; integer?: boolean; min?: number; max?: number }) {
   const [draft, setDraft] = useState(value === null ? "" : String(value));
@@ -2335,11 +2281,23 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     [startupProjectStatus, setStartupProjectStatus] = useState("Preparing autosave…");
   const [pendingOpenProject,setPendingOpenProject]=useState<DesktopProjectResult|null>(null);
   const [pendingReplacement,setPendingReplacement]=useState<"new"|"demo-scene"|"demo-map"|null>(null);
+  const [plotDocument, setPlotDocument] = useState(defaultPlotDocument);
+  const plotExportRef = useRef<((print?: boolean) => void) | null>(null);
+  const [plotHistory, setPlotHistory] = useState<{ past: ReturnType<typeof defaultPlotDocument>[]; future: ReturnType<typeof defaultPlotDocument>[] }>({ past: [], future: [] });
+  const updatePlotDocument = useCallback((next: ReturnType<typeof defaultPlotDocument>) => { setPlotHistory(h => ({ past: [...h.past, plotDocument].slice(-60), future: [] })); setPlotDocument(next); }, [plotDocument]);
+  const undoPlot = useCallback(() => { const previous = plotHistory.past.at(-1); if (!previous) return; setPlotHistory({ past: plotHistory.past.slice(0, -1), future: [plotDocument, ...plotHistory.future] }); setPlotDocument(previous); }, [plotHistory, plotDocument]);
+  const redoPlot = useCallback(() => { const next = plotHistory.future[0]; if (!next) return; setPlotHistory({ past: [...plotHistory.past, plotDocument], future: plotHistory.future.slice(1) }); setPlotDocument(next); }, [plotHistory, plotDocument]);
+  useEffect(() => {
+    if (workspaceMode !== 'plots') return;
+    const listener = (event: KeyboardEvent) => { const target = event.target as HTMLElement | null; if (target?.closest('input,textarea,select,[contenteditable=true],dialog') || document.querySelector('dialog[open]') || !(event.ctrlKey || event.metaKey)) return; if (event.key.toLowerCase() === 'z') { event.preventDefault(); if (event.shiftKey) redoPlot(); else undoPlot(); } else if (event.key.toLowerCase() === 'y') { event.preventDefault(); redoPlot(); } };
+    window.addEventListener('keydown', listener); return () => window.removeEventListener('keydown', listener);
+  }, [workspaceMode, undoPlot, redoPlot]);
+
   const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [helpTopic, setHelpTopic] = useState<"manual" | "shortcuts" | null>(null);
   const [compilingProject, setCompilingProject] = useState(false);
   const compileInFlight = useRef(false);
-  const [renderMetrics] = useState(() => ({ patterns: new RenderPerformance(), resolume: new RenderPerformance(), simulation: new RenderPerformance() }));
+  const [renderMetrics] = useState(() => ({ patterns: new RenderPerformance(), resolume: new RenderPerformance(), simulation: new RenderPerformance(), plots: new RenderPerformance() }));
   const [v070InspectorTab, setV070InspectorTab] = useState<"setup" | "overlays" | "logo" | "scene" | "source" | "geometry" | "information" | "appearance" | "export">("setup"),
     [v070Menu, setV070Menu] = useState<string | null>(null),
     [v070ToolQuery, setV070ToolQuery] = useState(""),
@@ -3852,7 +3810,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     panRef.current = pan;
   }, [pan]);
   useEffect(() => {
-    if (workspaceMode === "simulation") return;
+    if (workspaceMode === "simulation" || workspaceMode === "plots") return;
     const stage = canvasStageRef.current;
     if (!stage) return;
     const updateBounds = () => {
@@ -3892,7 +3850,9 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
   }, [mapSequenceActive, mapSequenceWorkspace, resolumeMap]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if (event.code === "Space" && !(event.target instanceof HTMLInputElement)) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (event.defaultPrevented || target?.isContentEditable || target?.closest('input, textarea, select, button, [role="textbox"], [role="combobox"], [role="button"]')) return;
+      if (event.code === "Space") {
         event.preventDefault();
         setSpaceDown(true);
       }
@@ -4534,7 +4494,8 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     () => ({
           format: "opticmesh-project",
           version: importedModels.length || Object.keys(simulationBodyAppearances).length ? 4 : 3,
-          appVersion: LOCAL_PREVIEW ? "0.8.0-beta" : packageMetadata.version,
+          appVersion: LOCAL_PREVIEW ? "0.9.0-beta" : packageMetadata.version,
+          technicalPlots: plotDocument,
           config,
           patternStyle,
           patternCalibration,
@@ -4571,7 +4532,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             groups: simulationGroups,
           },
     }),
-    [simulationReflectionPreset, simulationBodyAppearances, importedModels, calculatorSources, config, logoData, logoName, mapView, patternCalibration, patternStyle, rawXml, simulationBackgroundLevel, simulationCamera, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTool, simulationTransformSpace, simulationTransforms, simulationVisibility, sliceOverrides, workspaceMode, xmlName],
+    [plotDocument, simulationReflectionPreset, simulationBodyAppearances, importedModels, calculatorSources, config, logoData, logoName, mapView, patternCalibration, patternStyle, rawXml, simulationBackgroundLevel, simulationCamera, simulationCurvature, simulationCurvatureOverrides, simulationDepthM, simulationFloorVisible, simulationGridVisible, simulationSnapEnabled, simulationGroups, simulationLocalNames, simulationLocks, simulationPivot, simulationPivotOverrides, simulationQuality, simulationSource, simulationSourceOverrides, simulationTool, simulationTransformSpace, simulationTransforms, simulationVisibility, sliceOverrides, workspaceMode, xmlName],
   );
   const currentProjectSnapshot = useCallback(() => ({ ...projectSnapshot, simulation: { ...projectSnapshot.simulation, camera: simulationCameraMemory.current || projectSnapshot.simulation.camera } }), [projectSnapshot]);
   const savedProjectSnapshot = useRef<Record<string, unknown> | null>(null);
@@ -4627,7 +4588,9 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
       setPatternStyle({ ...loadedPatternStyle, centerDotSize: normalizeCenterDotSize(loadedPatternStyle.centerDotSize) });
       setPatternCalibration(data.patternCalibration === "gamma" || data.patternCalibration === "seam" ? data.patternCalibration : "none");
       setCalculatorSources(Array.isArray(data.calculatorSources) && data.calculatorSources.length === 2 ? data.calculatorSources : ["physical", "raster"]);
-      const restoredWorkspace: WorkspaceMode = data.workspaceMode === "simulation" || data.workspaceMode === "resolume" ? data.workspaceMode : "patterns";
+      const restoredWorkspace: WorkspaceMode = data.workspaceMode === "simulation" || data.workspaceMode === "resolume" || data.workspaceMode === "plots" ? data.workspaceMode : "patterns";
+      setPlotDocument(readPlotDocument(data.technicalPlots));
+      setPlotHistory({ past: [], future: [] });
       setWorkspaceMode(restoredWorkspace);
       setControlTab(restoredWorkspace === "simulation" ? "scene" : "setup");
       setV070InspectorTab(restoredWorkspace === "simulation" ? "scene" : restoredWorkspace === "resolume" ? "source" : "setup");
@@ -5545,7 +5508,31 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
     </div>;
   };
 
+  const plotSource = useMemo<PlotSource>(() => ({
+    name: /^LO2S.*OpticMesh/.test(config.project) ? "Untitled project" : config.project, width: resolumeMap?.compositionWidth || config.resolutionWidth,
+    height: resolumeMap?.compositionHeight || config.resolutionHeight,
+    screens: resolumeMap?.screens.map(s => ({ name: s.name, width: s.width, height: s.height })) || [],
+    slices: allSlices.map(s => { const pitch = simulationPitchBySlice[s.id] || simulationMasterPitchMm; const scale = renderedSimulationTransforms[s.id]?.scale || [1, 1, 1]; return { ...s,
+      nominalPitch: sliceOverrides[s.id]?.pixelPitchMm || config.pixelPitchMm,
+      panelWidth: sliceOverrides[s.id]?.cabinetWidth || config.cabinetWidth, panelHeight: sliceOverrides[s.id]?.cabinetHeight || config.cabinetHeight,
+      panelPixelsWidth: cabinetPixels({ ...config, ...sliceOverrides[s.id] }).width, panelPixelsHeight: cabinetPixels({ ...config, ...sliceOverrides[s.id] }).height,
+      effectivePitch: pitch, physicalWidth: s.input.width * pitch / 1000 * Math.abs(scale[0]),
+      physicalHeight: s.input.height * pitch / 1000 * Math.abs(scale[1]),
+    }; }),
+  }), [config, resolumeMap, allSlices, simulationPitchBySlice, simulationMasterPitchMm, renderedSimulationTransforms, sliceOverrides]);
+  const plotScene = useMemo<SceneExportOptions>(() => ({
+    projectName: config.project, models: effectiveModels, bodyAppearanceBySlice: simulationBodyBySlice,
+    slices: allSlices.filter(s => simulationVisibleIds.includes(s.id)),
+    compositionWidth: resolumeMap?.compositionWidth || config.resolutionWidth,
+    compositionHeight: resolumeMap?.compositionHeight || config.resolutionHeight,
+    masterPitchMm: simulationMasterPitchMm, pitchBySlice: simulationPitchBySlice,
+    depthBySlice: simulationDepthBySlice, curvatureBySlice: simulationCurvatureBySlice,
+    pivotBySlice: simulationPivotBySlice, transforms: simulationExportTransforms, groups: simulationGroups,
+    drawPatternTexture: canvas => { canvas.width = 1; canvas.height = 1; const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#506e75'; ctx.fillRect(0, 0, 1, 1); },
+  }), [config.project, config.resolutionWidth, config.resolutionHeight, effectiveModels, simulationBodyBySlice, allSlices, simulationVisibleIds, resolumeMap, simulationMasterPitchMm, simulationPitchBySlice, simulationDepthBySlice, simulationCurvatureBySlice, simulationPivotBySlice, simulationExportTransforms, simulationGroups]);
+
   if (uiVersion === "v070") {
+    const isPlots = workspaceMode === "plots";
     const isV0703D = workspaceMode === "simulation",
       isV070Map = workspaceMode === "resolume",
       isDome = !isV070Map && !isV0703D && config.projectionFormat === "dome",
@@ -5592,17 +5579,18 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
             onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`button[aria-controls="toolbar-menu-${(v070Menu || item).toLowerCase()}"]`)?.focus(); setV070Menu(null); } }}
           ><button aria-pressed={v070Menu === item} className={v070Menu === item ? v070.active : ""} aria-expanded={v070Menu === item} aria-controls={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); setV070Menu(v070Menu === item ? null : item); }}>{item}</button>{v070Menu === item && <section id={`toolbar-menu-${item.toLowerCase()}`} onClick={(event) => { event.stopPropagation(); const action = (event.target as Element).closest("button"); if (action && !action.disabled && !action.hasAttribute("data-menu-keep-open")) { event.currentTarget.parentElement?.querySelector<HTMLButtonElement>("button[aria-controls]")?.focus(); setV070Menu(null); } }}>
             {item === "File" && <><button onClick={createBlankProject}>New Project</button><button onClick={openDemoProject}>Open Demo</button><button onClick={openProject}>Open Project…</button>{typeof window !== "undefined" && (window as PickerWindow).lo2sDesktop?.recentProjects && <RecentProjectsMenu load={loadRecentProjects} onOpen={openRecentProject} />}<hr /><button onClick={() => void saveActiveProject()}>Save</button><button onClick={saveProject}>Save As…</button><button disabled={compilingProject || !resolumeMap || !rawXml} onClick={() => void compileProject()}>{compilingProject ? "Compiling…" : "Compile Project…"}</button><button onClick={() => void revealProjectsFolder()}>Reveal Projects Folder</button></>}
-            {item === "Export" && (isV0703D ? <><strong>3D scene formats</strong><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("glb")}>GLB · Universal binary</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("gltf")}>glTF · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("obj")}>Wavefront OBJ · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("mvr")}>MVR 1.5 · Scene meshes</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("stl")}>STL · Geometry only</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("usdz")}>USDZ · Packaged scene</button>{simulationExporting && <small>Building 3D export…</small>}</> : <><button onClick={exportCurrent}>{isV070Map ? mapView === "input" ? "Input Map PNG" : "Current Output PNG" : "Current Pattern PNG"}</button>{isV070Map && resolumeMap && <><button onClick={exportSelected} disabled={!selectedSlices.length}>Selected Slices</button><button onClick={exportOutputs}>All Output Maps</button></>}</>)}
+            {item === "Export" && (isPlots ? <><strong>Technical plots</strong><button onClick={() => { plotExportRef.current?.(); setV070Menu(null); }}>Export A3 PDF…</button><button onClick={() => { plotExportRef.current?.(true); setV070Menu(null); }}>Print…</button></> : isV0703D ? <><strong>3D scene formats</strong><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("glb")}>GLB · Universal binary</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("gltf")}>glTF · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("obj")}>Wavefront OBJ · Packaged ZIP</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("mvr")}>MVR 1.5 · Scene meshes</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("stl")}>STL · Geometry only</button><button disabled={(!allSlices.length && !importedModels.length) || simulationExporting} onClick={() => void export3DScene("usdz")}>USDZ · Packaged scene</button>{simulationExporting && <small>Building 3D export…</small>}</> : <><button onClick={exportCurrent}>{isV070Map ? mapView === "input" ? "Input Map PNG" : "Current Output PNG" : "Current Pattern PNG"}</button>{isV070Map && resolumeMap && <><button onClick={exportSelected} disabled={!selectedSlices.length}>Selected Slices</button><button onClick={exportOutputs}>All Output Maps</button></>}</>)}
             {item === "Output" && <><button aria-pressed={patternOutput === "off" && !windowedOutputOpen} className={patternOutput === "off" && !windowedOutputOpen ? v070.active : ""} onClick={() => { setPatternOutput("off"); setWindowedOutputOpen(false); }}>OFF</button><button aria-pressed={patternOutput === "ndi"} className={patternOutput === "ndi" ? v070.active : ""} onClick={() => setPatternOutput("ndi")}>NDI</button><button aria-pressed={patternOutput === "spout"} className={patternOutput === "spout" ? v070.active : ""} onClick={() => setPatternOutput("spout")}>Spout</button><hr /><button disabled={!isV0703D} aria-pressed={windowedOutputOpen} title="Camera-only 3D preview" onClick={() => setWindowedOutputOpen((value) => !value)}>Floating Preview</button><button disabled={!windowedOutputOpen} aria-pressed={pauseMainViewport} title="Stop drawing the main 3D viewport while Floating Preview stays live" onClick={() => setMainViewportPaused(value => !value)}>Pause main viewport</button><hr /><small>{patternOutputStatus}</small></>}
-            {item === "Tools" && <><button aria-pressed={!v070Focused} onClick={() => setV070Focused(focused => !focused)}>{isV0703D ? "3D Tools" : isV070Map ? "Pixel Map Tools" : "Pattern Tools"}</button>{isV0703D && typeof window !== "undefined" && (window as PickerWindow).lo2sDesktop?.openSpaceMouseSettings && <button onClick={async () => { const result = await (window as PickerWindow).lo2sDesktop!.openSpaceMouseSettings!(); if (!result.ok) setNotice(result.error || "Could not open 3Dconnexion settings."); }}>3Dconnexion Settings…</button>}</>}
+            {item === "Tools" && <><button aria-pressed={!v070Focused} onClick={() => setV070Focused(focused => !focused)}>{isPlots ? "Technical Plots" : isV0703D ? "3D Tools" : isV070Map ? "Pixel Map Tools" : "Pattern Tools"}</button>{isV0703D && typeof window !== "undefined" && (window as PickerWindow).lo2sDesktop?.openSpaceMouseSettings && <button onClick={async () => { const result = await (window as PickerWindow).lo2sDesktop!.openSpaceMouseSettings!(); if (!result.ok) setNotice(result.error || "Could not open 3Dconnexion settings."); }}>3Dconnexion Settings…</button>}</>}
             {item === "Help" && <><button onClick={() => setHelpTopic("manual")}>OpticMesh Manual</button><button onClick={() => setHelpTopic("shortcuts")}>Keyboard Shortcuts</button></>}
             {item === "About" && <><strong>LO2S - OpticMesh</strong><small>Version {DISPLAY_VERSION} · {BUILD_DESCRIPTION}</small></>}
           </section>}</div>)}</nav>
-          <div className={v070.historyActions}><button title={historyState.undo ? `Undo · ${historyState.undo}` : "Undo"} disabled={!isV0703D || !historyState.undo} onClick={undoSimulation}>Undo{historyState.undo ? ` · ${historyState.undo}` : ""}</button><button title={historyState.redo ? `Redo · ${historyState.redo}` : "Redo"} disabled={!isV0703D || !historyState.redo} onClick={redoSimulation}>Redo{historyState.redo ? ` · ${historyState.redo}` : ""}</button></div>
+          <div className={v070.historyActions}><button title={historyState.undo ? `Undo · ${historyState.undo}` : "Undo"} disabled={isPlots ? !plotHistory.past.length : !isV0703D || !historyState.undo} onClick={isPlots ? undoPlot : undoSimulation}>Undo{!isPlots && historyState.undo ? ` · ${historyState.undo}` : ""}</button><button title={historyState.redo ? `Redo · ${historyState.redo}` : "Redo"} disabled={isPlots ? !plotHistory.future.length : !isV0703D || !historyState.redo} onClick={isPlots ? redoPlot : redoSimulation}>Redo{!isPlots && historyState.redo ? ` · ${historyState.redo}` : ""}</button></div>
         </header>
         <div className={v070.project}><div className={v070.projectMain}><div className={v070.projectInfo}><span>Project</span><strong title={config.project}>{config.project}</strong><span className={v070.saveStatus} data-state={startupProjectStatus.toLowerCase().includes("failed") ? "error" : startupProjectStatus.includes("autosaved") ? "success" : "information"} role="status" aria-live="polite" title={startupProjectStatus}><i />{startupProjectStatus}</span></div><div className={v070.notifications} data-active={Boolean(notice)} aria-label="Notifications"><span role="status" aria-live="polite" aria-atomic="true" title={notice || undefined}>{notice}</span>{notice && <button type="button" aria-label="Dismiss notification" title="Dismiss notification" onClick={() => setNotice("")}><UiIcon name="close" /></button>}</div></div><div className={v070.layoutArea}><div className={v070.layoutSwitch}><button aria-pressed={!v070Focused} className={!v070Focused ? v070.active : ""} onClick={() => setV070Focused(false)}>Studio</button><button aria-pressed={v070Focused} className={v070Focused ? v070.active : ""} onClick={() => setV070Focused(true)}>Focused</button></div></div></div>
-        <section className={v070.workspace}>
-          <nav className={v070.rail}><button aria-pressed={!isV070Map && !isV0703D} className={!isV070Map && !isV0703D ? v070.active : ""} onClick={() => { changeWorkspace("patterns"); setV070InspectorTab("setup"); }}><b><PatternsModeIcon /></b><span>Patterns</span></button><button aria-pressed={isV070Map} className={isV070Map ? v070.active : ""} onClick={() => { changeWorkspace("resolume"); setV070InspectorTab("source"); }}><b><PixelMapModeIcon /></b><span>Pixel Map</span></button><button aria-pressed={isV0703D} className={isV0703D ? v070.active : ""} onClick={() => { changeWorkspace("simulation"); setV070InspectorTab("scene"); }}><b><ThreeDModeIcon /></b><span>3D</span></button><i /><button onClick={() => setHelpTopic("manual")} title="OpticMesh Manual"><b><UiIcon name="book" /></b><span>Guide</span></button></nav>
+        <section className={v070.workspace} data-plots={isPlots}>
+          <nav className={v070.rail}><button aria-pressed={!isPlots && !isV070Map && !isV0703D} className={!isPlots && !isV070Map && !isV0703D ? v070.active : ""} onClick={() => { changeWorkspace("patterns"); setV070InspectorTab("setup"); }}><b><PatternsModeIcon /></b><span>Patterns</span></button><button aria-pressed={isV070Map} className={isV070Map ? v070.active : ""} onClick={() => { changeWorkspace("resolume"); setV070InspectorTab("source"); }}><b><PixelMapModeIcon /></b><span>Pixel Map</span></button><button aria-pressed={isV0703D} className={isV0703D ? v070.active : ""} onClick={() => { changeWorkspace("simulation"); setV070InspectorTab("scene"); }}><b><ThreeDModeIcon /></b><span>3D</span></button><button aria-pressed={isPlots} className={isPlots ? v070.active : ""} onClick={() => changeWorkspace("plots")}><b><UiIcon name="file" /></b><span>Plots</span></button><i /><button onClick={() => setHelpTopic("manual")} title="OpticMesh Manual"><b><UiIcon name="book" /></b><span>Guide</span></button></nav>
+          <TechnicalPlots document={plotDocument} onChange={updatePlotDocument} source={plotSource} scene={plotScene} active={isPlots} focused={v070Focused} exportRef={plotExportRef} onNotice={setNotice} />
           <aside className={v070.tools}>
             <div className={v070.panelTitle}><strong>Tools</strong></div>
             <label className={v070.search}><UiIcon name="search" /><input value={v070ToolQuery} onChange={(event) => setV070ToolQuery(event.target.value)} placeholder="Search tools…" aria-label="Search tools" /></label>
@@ -5640,7 +5628,7 @@ export default function Home({ uiVersion = "v070" }: { uiVersion?: "legacy" | "v
           </aside>
           <section className={`${v070.center} ${v070DiagnosticTab === "performance" ? v070.performanceCenter : ""} ${isV0703D && v070DiagnosticTab === "material" ? v070.materialCenter : ""} ${isV0703D ? v070.threeCenter : ""} ${isV070Map ? v070.mapCenter : ""} ${!v070DiagnosticsOpen ? v070.collapsedCenter : ""}`}>
             <div className={v070.toolbar}><div className={v070.contextControls}>{isV0703D ? <><button title="Move (E)" aria-label="Move" aria-pressed={simulationTool === "translate"} className={`${v070.iconButton} ${simulationTool === "translate" ? v070.active : ""}`} onClick={() => setSimulationTool("translate")}><UiIcon name="move" /></button><button title="Rotate (R)" aria-label="Rotate" aria-pressed={simulationTool === "rotate"} className={`${v070.iconButton} ${simulationTool === "rotate" ? v070.active : ""}`} onClick={() => setSimulationTool("rotate")}><UiIcon name="rotate" /></button><button title="Scale (T) — hold Shift while dragging for proportional scaling" aria-label="Scale" aria-pressed={simulationTool === "scale"} className={`${v070.iconButton} ${simulationTool === "scale" ? v070.active : ""}`} onClick={() => setSimulationTool("scale")}><UiIcon name="scale" /></button><button aria-label="Snap" aria-pressed={simulationSnapEnabled} className={`${v070.iconButton} ${simulationSnapEnabled ? v070.active : ""}`} title="Snap movement to the 1 metre world grid" onClick={() => { recordSimulationHistory(simulationSnapEnabled ? "Disable grid snap" : "Enable grid snap"); setSimulationSnapEnabled(value => !value); }}><UiIcon name="snap" /></button><button title="Local coordinate system" aria-label="Local" aria-pressed={simulationTransformSpace === "local"} className={`${v070.iconButton} ${simulationTransformSpace === "local" ? v070.active : ""}`} onClick={() => setSimulationTransformSpace("local")}><UiIcon name="local" /></button><button title="World coordinate system" aria-label="World" aria-pressed={simulationTransformSpace === "world"} className={`${v070.iconButton} ${simulationTransformSpace === "world" ? v070.active : ""}`} onClick={() => setSimulationTransformSpace("world")}><UiIcon name="world" /></button></> : isV070Map ? <><button aria-pressed={mapView === "input"} className={mapView === "input" ? v070.active : ""} onClick={() => changeMapView("input")}>Input Map</button><button aria-pressed={mapView === "output"} className={mapView === "output" ? v070.active : ""} onClick={() => changeMapView("output")}>Output Map</button></> : PROJECTION_FORMATS.map((format) => <button key={format.id} aria-pressed={config.projectionFormat === format.id} className={config.projectionFormat === format.id ? v070.active : ""} onClick={() => selectProjectionFormat(format.id)}>{format.name}</button>)}</div><div className={v070.viewControls}>{isV0703D ? <><select className={v070.cameraSelect} aria-label="Camera view" value={simulationViewMode} onChange={(event) => setSimulationViewMode(event.target.value as SimulationView)}><option value="perspective">Perspective</option><option value="top">Top</option><option value="right">Right</option><option value="front">Front</option><option value="four">All Views</option></select><span className={v070.cameraButtons}><button aria-pressed={simulationViewMode === "perspective"} className={simulationViewMode === "perspective" ? v070.active : ""} onClick={() => setSimulationViewMode("perspective")}>Perspective</button><button aria-pressed={simulationViewMode === "top"} className={simulationViewMode === "top" ? v070.active : ""} onClick={() => setSimulationViewMode("top")}>Top</button><button aria-pressed={simulationViewMode === "right"} className={simulationViewMode === "right" ? v070.active : ""} onClick={() => setSimulationViewMode("right")}>Right</button><button aria-pressed={simulationViewMode === "front"} className={simulationViewMode === "front" ? v070.active : ""} onClick={() => setSimulationViewMode("front")}>Front</button><button aria-pressed={simulationViewMode === "four"} className={simulationViewMode === "four" ? v070.active : ""} onClick={() => setSimulationViewMode("four")}>All Views</button></span><button disabled={!selectedSliceIds.length && !modelSelection.length} onClick={() => setSimulationFocusSignal((value) => value + 1)}>Focus</button><button onClick={() => setSimulationFitSignal((value) => value + 1)}>Fit Scene</button></> : <><button aria-pressed={fullscreenMode === "fit"} className={fullscreenMode === "fit" ? v070.active : ""} onClick={resetView}>Fit Canvas</button><button aria-pressed={fullscreenMode === "actual"} className={fullscreenMode === "actual" ? v070.active : ""} onClick={actualPixels}>Actual 1:1</button></>}<button onClick={enterFullscreen} aria-label="Fullscreen viewport" title="Fullscreen viewport"><UiIcon name="fullscreen" /></button></div></div>
-            <div className={v070.canvasShell} ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>{isV0703D && pauseMainViewport && <div className={v070.viewportPauseOverlay}><strong>Main viewport paused</strong><span>Floating Preview stays live. Scene edits continue to update it.</span><button onClick={() => setMainViewportPaused(false)}>Resume viewport</button></div>}<RetainedWorkspace key={simulationCameraSession} active={isV0703D}><ThreeSimulation key={simulationCameraSession} onSceneReady={startupRestoreReady && !startupViewReady ? finishStartup : undefined} cameraMemory={simulationCameraMemory} transferActive={!!transferSource} onTransferTarget={transferToTarget} renderPaused={!isV0703D || pauseMainViewport} outputActive={isV0703D && patternOutput !== "off"} bodyAppearanceBySlice={simulationBodyBySlice} {...modelProps} performanceMetrics={renderMetrics.simulation} slices={allSlices} compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth} compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight} masterPitchMm={simulationMasterPitchMm} pitchBySlice={simulationPitchBySlice} depthBySlice={simulationDepthBySlice} curvatureBySlice={simulationCurvatureBySlice} pivotBySlice={simulationPivotBySlice} selectedIds={selectedSliceIds} visibleIds={simulationVisibleIds} lockedIds={simulationLockedIds} transforms={groupModelPreview ? {...renderedSimulationTransforms,...simulationTransformPreview} : renderedSimulationTransforms} selectionTransform={selectedGroupSelectionWorldTransform} transformMode={simulationTool} transformSpace={simulationTransformSpace} source={simulationSource} sourceOverrides={simulationSourceOverrides} sourceMedia={simulationSourceMedia} sourceQuality={simulationQuality} cameraState={simulationCamera} textureVersion={simulationTextureVersion} fitSignal={simulationFitSignal} focusSignal={simulationFocusSignal} viewMode={simulationViewMode} snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible} floorVisible={simulationFloorVisible} backgroundLevel={simulationBackgroundLevel} reflectionPreset={simulationReflectionPreset} interactiveGeometryPreview={simulationGeometryPreview} drawPatternTexture={drawSimulationTexture} onSelectionChange={(ids,additive) => { if(!additive)setModelSelection([]); setSimulationTransformPreview(null); setSelectedGroupIds([]); setSelectedSliceIds(ids); }} onTransformPreview={setSimulationTransformPreview} onTransformsChange={commitSimulationTransforms} onCameraChange={publishSimulationCamera} onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }} /></RetainedWorkspace>{!isV0703D && <div ref={canvasStageRef} className={`canvas-stage ${spaceDown ? "panning" : ""} ${emptyPixelMap ? "map-empty-stage" : ""}`} onPointerDown={beginInteraction} onPointerMove={moveInteraction} onPointerUp={endInteraction} onPointerCancel={cancelInteraction} onWheel={(event) => { event.preventDefault(); adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY); }}>{emptyPixelMap && <div className="map-empty" role="status"><strong>Import a Resolume XML map</strong><span>Your input and output maps will appear here.</span></div>}<canvas ref={canvasRef} aria-hidden={emptyPixelMap || undefined} style={{ visibility: emptyPixelMap ? "hidden" : undefined, width: `${outputWidth * baseScale}px`, height: `${outputHeight * baseScale}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, imageRendering: fullscreenMode === "actual" && displayScale >= 1 ? "pixelated" : "auto" }} aria-label="LO2S - OpticMesh 0.7 live pattern output" /></div>}</div>
+            <div className={v070.canvasShell} ref={fullscreenHostRef} data-fullscreen-mode={fullscreenMode}>{isV0703D && pauseMainViewport && <div className={v070.viewportPauseOverlay}><strong>Main viewport paused</strong><span>Floating Preview stays live. Scene edits continue to update it.</span><button onClick={() => setMainViewportPaused(false)}>Resume viewport</button></div>}<RetainedWorkspace key={simulationCameraSession} active={isV0703D}><ThreeSimulation key={simulationCameraSession} onSceneReady={startupRestoreReady && !startupViewReady ? finishStartup : undefined} cameraMemory={simulationCameraMemory} transferActive={!!transferSource} onTransferTarget={transferToTarget} renderPaused={!isV0703D || pauseMainViewport} outputActive={isV0703D && patternOutput !== "off"} bodyAppearanceBySlice={simulationBodyBySlice} {...modelProps} performanceMetrics={renderMetrics.simulation} slices={allSlices} compositionWidth={resolumeMap?.compositionWidth || config.resolutionWidth} compositionHeight={resolumeMap?.compositionHeight || config.resolutionHeight} masterPitchMm={simulationMasterPitchMm} pitchBySlice={simulationPitchBySlice} depthBySlice={simulationDepthBySlice} curvatureBySlice={simulationCurvatureBySlice} pivotBySlice={simulationPivotBySlice} selectedIds={selectedSliceIds} visibleIds={simulationVisibleIds} lockedIds={simulationLockedIds} transforms={groupModelPreview ? {...renderedSimulationTransforms,...simulationTransformPreview} : renderedSimulationTransforms} selectionTransform={selectedGroupSelectionWorldTransform} transformMode={simulationTool} transformSpace={simulationTransformSpace} source={simulationSource} sourceOverrides={simulationSourceOverrides} sourceMedia={simulationSourceMedia} sourceQuality={simulationQuality} cameraState={simulationCamera} textureVersion={simulationTextureVersion} fitSignal={simulationFitSignal} focusSignal={simulationFocusSignal} viewMode={simulationViewMode} snapEnabled={simulationSnapEnabled} gridVisible={simulationGridVisible} floorVisible={simulationFloorVisible} backgroundLevel={simulationBackgroundLevel} reflectionPreset={simulationReflectionPreset} interactiveGeometryPreview={simulationGeometryPreview} drawPatternTexture={drawSimulationTexture} onSelectionChange={(ids,additive) => { if(!additive)setModelSelection([]); setSimulationTransformPreview(null); setSelectedGroupIds([]); setSelectedSliceIds(ids); }} onTransformPreview={setSimulationTransformPreview} onTransformsChange={commitSimulationTransforms} onCameraChange={publishSimulationCamera} onOutputCaptureReady={(capture) => { simulationOutputCaptureRef.current = capture; }} /></RetainedWorkspace>{!isV0703D && !isPlots && <div ref={canvasStageRef} className={`canvas-stage ${spaceDown ? "panning" : ""} ${emptyPixelMap ? "map-empty-stage" : ""}`} onPointerDown={beginInteraction} onPointerMove={moveInteraction} onPointerUp={endInteraction} onPointerCancel={cancelInteraction} onWheel={(event) => { event.preventDefault(); adjustZoom(zoomRef.current * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY); }}>{emptyPixelMap && <div className="map-empty" role="status"><strong>Import a Resolume XML map</strong><span>Your input and output maps will appear here.</span></div>}<canvas ref={canvasRef} aria-hidden={emptyPixelMap || undefined} style={{ visibility: emptyPixelMap ? "hidden" : undefined, width: `${outputWidth * baseScale}px`, height: `${outputHeight * baseScale}px`, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, imageRendering: fullscreenMode === "actual" && displayScale >= 1 ? "pixelated" : "auto" }} aria-label="LO2S - OpticMesh 0.7 live pattern output" /></div>}</div>
             <div className={`${v070.diagnostics} ${isV070Map ? v070.mapDiagnostics : ""}`}>
               {isV0703D && <button aria-pressed={v070DiagnosticTab === "material"} className={v070DiagnosticTab === "material" ? v070.active : ""} onClick={()=>{setV070DiagnosticTab("material");setV070DiagnosticsOpen(true);}}>Material</button>}
               <button aria-pressed={v070DiagnosticTab === "validation"} className={v070DiagnosticTab === "validation" ? v070.active : ""} onClick={() => { setV070DiagnosticTab("validation"); setV070DiagnosticsOpen(true); }}>Validation <b>{isV0703D ? invalidCurvedDepthSlices.length : isV070Map ? validations.length : stats.mismatch || stats.cabinetRemainder ? 1 : 0}</b></button>

@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useRef,useState,type CSSProperties,type ReactNode} from "react";
-import manual from "../MANUAL.md?raw";
+import manual from "./manual-content.md?raw";
 import UiIcon from "./ui-icon";
 import "./manual-dialog.css";
 
@@ -23,13 +23,21 @@ for(const line of manual.replace(/\r/g,"").split("\n")){
 }
 const welcome:Page={id:"welcome",title:"Welcome to OpticMesh",parent:null,text:manual.slice(manual.indexOf("LO2S - OpticMesh is an LED"),manual.indexOf("## Contents")).trim()};
 const allPages=[welcome,...pages],chapters=pages.filter(p=>!p.parent);
-const shortcutPage=pages.find(p=>p.title.startsWith("12."))!;
+const shortcutPage=pages.find(p=>p.title.endsWith("Keyboard and mouse reference"))!;
 const assetBase=(import.meta as ImportMeta & {env?:{BASE_URL?:string}}).env?.BASE_URL||"/";
 const illustrations:Record<string,{src:string;alt:string;caption:string}>={
+ "8-3d-simulation-workspace":{src:`${assetBase}manual/simulation.png`,alt:"3D workspace with the demo screens, transform tools and scene hierarchy",caption:"Arrange the mapped screens and verify their physical placement before preparing Technical Plots."},
+ "9-technical-plots":{src:`${assetBase}manual/plots-workspace.png`,alt:"Technical Plots with sheet list, four stage views and sheet properties",caption:"Manage sheets on the left, review the A3 page in the centre, and edit its frames on the right."},
+ "92-place-resize-and-align-frames":{src:`${assetBase}manual/plots-layout.png`,alt:"Four scene frames in Edit layout with selection border and resize handle",caption:"Select a frame in Edit layout; drag its body to move it or its bottom-right handle to resize."},
+ "94-templates-and-branding":{src:`${assetBase}manual/plots-templates.png`,alt:"Template picker, labelled template title field and library actions",caption:"Choose a saved layout, name your template, then save it to the library or export it."},
+ "96-screen-details-and-specifications":{src:`${assetBase}manual/plots-screen-detail.png`,alt:"Screen detail showing panel grid, pixel dimensions and panel specifications",caption:"The grid represents the selected slice’s configured panels; the measurements are kept outside it."},
+ "97-camera-views-and-framing":{src:`${assetBase}manual/plots-framing.png`,alt:"Selected stage-view frame with camera, style, zoom and pan controls",caption:"Adjust view framing changes the composition inside one frame, without moving the scene."},
+ "98-text-and-typography":{src:`${assetBase}manual/plots-text.png`,alt:"Text formatting section with bold, italic, underline and alignment controls",caption:"These controls appear only for text frames and apply to the whole note body."},
+ "99-pdf-and-print":{src:`${assetBase}manual/plots-print.png`,alt:"A3 print preview with page navigation, printer choice and copies",caption:"Review each page before printing. The printer shown is an example; choose your installed device."},
  "31-workspaces":{src:`${assetBase}manual/patterns.png`,alt:"Patterns workspace with tools on the left, the test pattern in the centre and wall settings on the right",caption:"Patterns: tools, canvas and settings share one workspace."},
  "73-pixel-pitch-and-physical-scale":{src:`${assetBase}manual/pixel-map.png`,alt:"Resolume Pixel Map workspace showing named slices and physical scale settings",caption:"Inspect the mapping and set the real pixel pitch before arranging the screens in 3D."},
- "91-hierarchy-objects":{src:`${assetBase}manual/hierarchy.png`,alt:"Scene hierarchy showing screen containers, LED slices and an expanded imported stage model with Platform and Screen parts",caption:"Screens, slices and imported model parts use the same hierarchy controls."},
- "stage-model-import-v080":{src:`${assetBase}manual/import-model.png`,alt:"Import 3D model dialog with a simple platform and screen, metre units, hierarchy toggle and dimension readouts",caption:"Check the model, units and dimensions before importing."},
+ "101-hierarchy-objects":{src:`${assetBase}manual/hierarchy.png`,alt:"Scene hierarchy showing screen containers, LED slices and an expanded imported stage model with Platform and Screen parts",caption:"Screens, slices and imported model parts use the same hierarchy controls."},
+ "stage-model-import":{src:`${assetBase}manual/import-model.png`,alt:"Import 3D model dialog with a simple platform and screen, metre units, hierarchy toggle and dimension readouts",caption:"Check the model, units and dimensions before importing."},
  "led-extrusion-materials":{src:`${assetBase}manual/material.png`,alt:"Material controls including display, diffuse colour, diffuse intensity, metallic, roughness and specular",caption:"Material controls affect LED sides and backs while the display face keeps its source image."}
 };
 function Markdown({text,navigate}:{text:string;navigate:(id:string)=>void}){

@@ -36,12 +36,14 @@ try {
   }
   await page.getByRole('button', { name: 'Guide', exact: true }).click();
   const manual = page.getByRole('dialog');
-  assert((await manual.innerText()).includes('Version 0.8.0'));
+  assert((await manual.innerText()).includes(`Version ${candidate.version.replace(/-beta$/, '')}`));
   const sections = manual.getByRole('navigation', { name: 'Manual sections', exact: true });
   assert((await sections.locator('a').count()) >= 18);
   await sections.locator('a[href="#manual-5-projects-autosave-and-recovery"]').click();
   await sections.locator('a[href="#manual-54-compile-project"]').click();
   assert((await manual.getByRole('article').innerText()).includes('Compile Project'));
+  await sections.locator('a[href="#manual-9-technical-plots"]').click();
+  assert((await manual.getByRole('article').innerText()).includes('Technical Plots'));
   await page.getByRole('button', { name: 'Close manual', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'Latest changes autosaved' }).waitFor({ timeout: 15000 });
   const startupPath = path.join(documents, 'OpticMesh', 'Projects', 'Startup Project.lo2s');

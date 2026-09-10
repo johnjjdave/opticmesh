@@ -1,0 +1,53 @@
+.technical-plots{min-width:0;min-height:0;height:100%;display:grid;grid-template-columns:248px minmax(0,1fr) 288px;background:var(--surface-app,#111416);color:var(--text-primary,#f4f7f8);font:500 11px/16px Geist,Arial,sans-serif;overflow:hidden}
+.technical-plots[data-focused=true]{grid-template-columns:0 minmax(0,1fr) 288px}.technical-plots[data-focused=true] .plots-tools{visibility:hidden}
+.plots-tools,.plots-inspector{min-width:0;overflow:auto;background:var(--surface-panel,#171a1c);border-right:1px solid var(--border-section,#343a3d)}.plots-inspector{border-left:1px solid var(--border-section,#343a3d)}
+.technical-plots h2{font-size:12px;padding:12px;margin:0;border-bottom:1px solid var(--border-section,#343a3d)}.technical-plots h3{font-size:10px;color:var(--text-muted,#849095);letter-spacing:.08em;margin:0 0 8px}
+.technical-plots section{padding:12px;border-bottom:1px solid var(--border-section,#343a3d)}.technical-plots button,.technical-plots input,.technical-plots select,.technical-plots textarea{box-sizing:border-box;max-width:100%;font:inherit;color:inherit;background:var(--surface-control,#202426);border:1px solid var(--border-control,#41484b);border-radius:0;min-height:30px;padding:5px 8px}
+.technical-plots button{cursor:pointer}.technical-plots button:disabled{opacity:.4;cursor:default}.technical-plots button:hover:not(:disabled){background:var(--surface-hover,#272c2e)}.technical-plots button.active{background:var(--surface-selected,#303638);border-color:var(--accent,#d4dcd6)}.technical-plots :focus-visible{outline:1px solid var(--accent,#d4dcd6);outline-offset:2px}
+.plots-tools section>button,.plots-inspector section>button,.technical-plots section>select{display:block;width:100%;margin:4px 0;text-align:left;overflow:hidden;text-overflow:ellipsis}.plots-tools button span{display:inline-block;color:var(--text-muted,#849095);margin-right:8px;font-variant-numeric:tabular-nums}
+.technical-plots label{display:block;color:var(--text-secondary,#aab3b6);margin:8px 0;text-transform:capitalize}.technical-plots label input,.technical-plots label select,.technical-plots label textarea{display:block;width:100%;margin-top:4px;text-transform:none}.technical-plots textarea{resize:vertical;user-select:text}.technical-plots input{user-select:text;min-width:0;width:100%}
+.plots-row,.plots-measurements{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px}.plots-check{display:flex!important;gap:8px;align-items:center}.plots-check input{width:16px!important;margin:0!important}
+.plots-main{display:flex;flex-direction:column;min-width:0;min-height:0}.plots-toolbar{display:flex;gap:8px;align-items:center;min-height:42px;padding:4px 12px;background:var(--surface-section,#191c1e);border-bottom:1px solid var(--border-section,#343a3d)}.plots-spacer{flex:1}.plots-toolbar>span:first-child{white-space:nowrap}.plots-viewport{flex:1;min-height:0;overflow:auto;background:#252a2c;padding:24px;box-sizing:border-box}.plots-page-space{position:relative;margin:auto;flex:none}.plots-paper{width:420mm;height:297mm;transform-origin:top left;position:relative;box-shadow:0 2px 18px #0005}.plots-paper>svg{pointer-events:none;user-select:none}.plots-status{min-height:32px;padding:8px 12px;border-top:1px solid var(--border-section,#343a3d);color:var(--text-secondary,#aab3b6)}
+.plots-layout-overlay{position:absolute;inset:0}
+[data-plots=true]{grid-template-columns:62px minmax(0,1fr)!important}[data-plots=true]>aside,[data-plots=true]>section{display:none!important}[data-plots=true]>.technical-plots{grid-column:2;grid-row:1}
+@media(max-width:1200px){.technical-plots{grid-template-columns:204px minmax(0,1fr) 248px}.plots-toolbar{gap:4px;padding:4px}.plots-toolbar>span:first-child{display:none}}
+
+.plots-sheet-list{margin-bottom:10px}.plots-sheet-list>button{position:relative;display:flex;align-items:center;gap:6px;width:100%;text-align:left;margin:0;border-bottom:0;height:32px}.plots-sheet-list>button:last-child{border-bottom:1px solid var(--border-control,#41484b)}.plots-sheet-list strong{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plots-sheet-list .ui-icon{width:16px;height:16px}.plots-sheet-list .drop-before:before,.plots-sheet-list .drop-after:after{content:'';position:absolute;left:0;right:0;height:2px;background:var(--accent,#d4dcd6);z-index:2}.plots-sheet-list .drop-before:before{top:-1px}.plots-sheet-list .drop-after:after{bottom:-1px}
+.plots-placement{position:absolute;inset:0;cursor:crosshair}.plots-ghost{position:absolute;border:2px dashed #506e75;pointer-events:none;box-sizing:border-box}.plots-compose{position:absolute;border:2px dashed #506e75;cursor:grab;touch-action:none;background:transparent}.plots-compose:active{cursor:grabbing}
+.technical-plots .number-control{display:flex;height:32px;padding-right:28px}.technical-plots .number-control input{margin:0;border:0;padding:0 8px;min-height:0;background:transparent}.technical-plots .number-control em{margin:0;flex:0 0 26px;font-size:9px}.technical-plots .field-stepper button{min-height:0;padding:0}.technical-plots .number-field{margin:8px 0}.technical-plots .number-field>span:first-child{line-height:14px}.technical-plots .number-control .field-stepper{right:0}.technical-plots .stepper-actions{z-index:100}
+.plots-modal-backdrop{position:fixed;inset:0;z-index:18000;background:#0009;display:grid;place-items:center;padding:24px}.plots-print-dialog{width:min(1180px,96vw);max-height:94vh;display:flex;flex-direction:column;background:var(--surface-panel,#171a1c);border:1px solid var(--border-control,#41484b);box-shadow:0 16px 70px #0008;outline:none}.plots-print-dialog header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-section,#343a3d);padding-right:12px}.plots-print-dialog h2{border:0;padding:16px}.plots-print-body{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:0;overflow:auto}.plots-print-body>aside{padding:18px;border-right:1px solid var(--border-section,#343a3d)}.plots-print-view{padding:24px;background:#252a2c;min-width:0}.plots-print-page{aspect-ratio:420/297;background:white;box-shadow:0 3px 15px #0005}.plots-print-page>svg{width:100%;height:100%}.plots-print-view nav{display:flex;justify-content:center;align-items:center;gap:16px;margin-top:16px}.plots-print-dialog footer{padding:12px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border-section,#343a3d)}.plots-print-error{color:var(--amber,#e4b26d)}
+
+.technical-plots .number-control em{text-transform:none}.technical-plots input[type=checkbox]{accent-color:var(--accent,#d4dcd6)}
+
+.plots-print-dialog{padding:0;color:inherit;margin:auto}.plots-print-dialog::backdrop{background:#0009}.plots-print-dialog:not([open]){display:none}
+
+.plots-status { height: 36px; min-height: 36px; flex: 0 0 36px; box-sizing: border-box; overflow: hidden; white-space: nowrap; }
+.plots-frame-control { position: absolute; pointer-events: auto; }
+.plots-frame-control .plots-frame-move { position: absolute; inset: 0; width: 100%; height: 100%; border: 1px dashed #506e75; background: transparent; cursor: move; touch-action: none; padding: 0; }
+.plots-frame-control.selected .plots-frame-move { border: 2px solid #506e75; }
+.plots-frame-move span { position: absolute; top: 0; left: 0; padding: 3px 6px; color: white; background: #506e75; }
+.plots-frame-control .plots-frame-resize { position: absolute; bottom: -5px; right: -5px; width: 18px; height: 18px; min-height: 0; padding: 0; border: 2px solid white; background: #506e75; cursor: nwse-resize; touch-action: none; }
+.plots-guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; overflow: visible; }
+.plots-guides line, .plots-guides path { stroke: #9b5b2e; stroke-width: .3; fill: none; }
+.plots-guides text { fill: #855027; stroke: white; stroke-width: 1.1; paint-order: stroke; font: 3px Arial; }
+.plots-compose { overflow: hidden; background: white; }
+
+.technical-plots .plots-frame-move:hover:not(:disabled) { background: transparent; }
+
+.plots-layout-overlay[data-copying=true] .plots-frame-move { cursor: copy; }
+
+.technical-plots .plots-template-name{margin:14px 0 10px;text-transform:none;font-size:10px;color:var(--text-muted,#849095)}
+.technical-plots .plots-template-name input{margin-top:6px;background:var(--surface-app,#111416);border-color:var(--border-section,#343a3d);color:var(--text-primary,#f4f7f8);font-size:11px;cursor:text;box-shadow:inset 0 1px 2px #0003}
+.technical-plots .plots-template-name input:focus{border-color:var(--accent,#d4dcd6)}
+.technical-plots .plots-template-files{margin-top:12px;padding-top:10px;border-top:1px solid var(--border-section,#343a3d)}
+
+.plots-text-formatting{margin:14px 0;padding-top:12px;border-top:1px solid var(--border-section,#343a3d)}
+.plots-text-style{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.plots-text-style button{font-size:13px}
+
+/* Match the existing inspector scrollbars, scoped to Technical Plots. */
+.plots-tools,.plots-inspector,.plots-viewport,.technical-plots textarea{scrollbar-width:thin;scrollbar-color:#454b4e transparent;color-scheme:dark}
+.plots-tools,.plots-inspector,.technical-plots textarea{scrollbar-gutter:stable}
+.plots-tools::-webkit-scrollbar,.plots-inspector::-webkit-scrollbar,.plots-viewport::-webkit-scrollbar,.technical-plots textarea::-webkit-scrollbar{width:8px;height:8px}
+.plots-tools::-webkit-scrollbar-track,.plots-inspector::-webkit-scrollbar-track,.plots-viewport::-webkit-scrollbar-track,.technical-plots textarea::-webkit-scrollbar-track{background:transparent}
+.plots-tools::-webkit-scrollbar-thumb,.plots-inspector::-webkit-scrollbar-thumb,.plots-viewport::-webkit-scrollbar-thumb,.technical-plots textarea::-webkit-scrollbar-thumb{background:#454b4e}
+.plots-tools::-webkit-scrollbar-corner,.plots-inspector::-webkit-scrollbar-corner,.plots-viewport::-webkit-scrollbar-corner,.technical-plots textarea::-webkit-scrollbar-corner{background:transparent}
